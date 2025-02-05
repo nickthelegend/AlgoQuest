@@ -1,69 +1,158 @@
-import { View, Text, ScrollView, TouchableOpacity, useColorScheme, StyleSheet, Dimensions } from "react-native"
+"use client"
+
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { LinearGradient } from "expo-linear-gradient"
-import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated"
-import { ArrowRight, Shield, Zap, Lock } from "lucide-react-native"
-import { Link } from "expo-router"
+import Animated, {
+  FadeInDown,
+  withSpring,
+  withRepeat,
+  useAnimatedStyle,
+  withSequence,
+  useSharedValue,
+} from "react-native-reanimated"
+import { BlurView } from "expo-blur"
+import {
+  MapPin,
+  Coins,
+  Users,
+  Image as ImageIcon,
+  ChevronRight,
+  Bell,
+  Trophy,
+  BookOpen,
+  Coffee,
+} from "lucide-react-native"
+import { useEffect } from "react"
+import Svg, { Circle, G } from "react-native-svg"
 
 const { width } = Dimensions.get("window")
+const CARD_WIDTH = (width - 48) / 2
 
-export default function LandingScreen() {
-  const colorScheme = useColorScheme()
-  const isDark = colorScheme === "dark"
+export default function HomeScreen() {
+  const pulseAnim = useSharedValue(1)
+  const progressAnim = useSharedValue(0)
 
-  const features = [
+  useEffect(() => {
+    pulseAnim.value = withRepeat(withSequence(withSpring(1.2), withSpring(1)), -1, true)
+    progressAnim.value = withSpring(0.7, { damping: 15 })
+  }, [progressAnim]) // Added progressAnim to dependencies
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseAnim.value }],
+  }))
+
+  const quests = [
     {
-      icon: Shield,
-      title: "Secure Transactions",
-      description: "End-to-end encrypted blockchain transactions",
+      title: "AR Treasure Hunt",
+      location: "Library",
+      reward: "100 $CAMP",
+      icon: BookOpen,
     },
     {
-      icon: Zap,
-      title: "Lightning Fast",
-      description: "Instant settlement and confirmation",
+      title: "Social Meetup",
+      location: "Cafeteria",
+      reward: "50 $CAMP",
+      icon: Coffee,
     },
     {
-      icon: Lock,
-      title: "Privacy First",
-      description: "Your data stays private and secure",
+      title: "Study Group",
+      location: "Lab",
+      reward: "75 $CAMP",
+      icon: Users,
     },
   ]
 
   return (
-    <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
+    <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <LinearGradient colors={isDark ? ["#1e293b", "#0f172a"] : ["#ffffff", "#f8fafc"]} style={styles.gradient}>
-          {/* Hero Section */}
-          <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.heroContainer}>
-            <Text style={[styles.title, isDark && styles.textLight]}>Blockchain Solutions</Text>
-            <Text style={[styles.subtitle, isDark && styles.textLight]}>Secure, Fast, and Decentralized</Text>
-            <Text style={[styles.description, isDark && styles.textMuted]}>
-              Transform your business with our next-generation blockchain platform. Built for security, scalability, and
-              ease of use.
-            </Text>
-            <Link href="/explore" asChild>
-              <TouchableOpacity style={styles.button}>
-                <Text style={styles.buttonText}>Get Started</Text>
-                <ArrowRight size={20} color="#ffffff" />
+        {/* Attendance Status */}
+        <Animated.View entering={FadeInDown.delay(200)} style={styles.attendanceCard}>
+          <BlurView intensity={40} tint="dark" style={styles.cardContent}>
+            <View style={styles.progressRing}>
+              <Svg width={120} height={120}>
+                <G rotation="-90" origin="60, 60">
+                  <Circle cx="60" cy="60" r="54" stroke="#2A2A2A" strokeWidth="12" />
+                  <Circle
+                    cx="60"
+                    cy="60"
+                    r="54"
+                    stroke="#7C3AED"
+                    strokeWidth="12"
+                    strokeDasharray={339.292}
+                    strokeDashoffset={339.292 * 0.3}
+                  />
+                </G>
+              </Svg>
+              <View style={styles.progressContent}>
+                <Text style={styles.progressDay}>Day</Text>
+                <Text style={styles.progressText}>5/7</Text>
+              </View>
+            </View>
+            <Animated.View style={[styles.checkInButton, pulseStyle]}>
+              <TouchableOpacity style={styles.checkInTouchable}>
+                <MapPin size={24} color="#ffffff" />
+                <Text style={styles.checkInText}>Check-In Now</Text>
               </TouchableOpacity>
-            </Link>
-          </Animated.View>
+            </Animated.View>
+          </BlurView>
+        </Animated.View>
 
-          {/* Features Section */}
-          <View style={styles.featuresContainer}>
-            {features.map((feature, index) => (
-              <Animated.View
-                key={feature.title}
-                entering={FadeInUp.delay(400 + index * 200).springify()}
-                style={[styles.featureCard, isDark && styles.featureCardDark]}
-              >
-                <feature.icon size={24} color={isDark ? "#60a5fa" : "#2563eb"} style={styles.featureIcon} />
-                <Text style={[styles.featureTitle, isDark && styles.textLight]}>{feature.title}</Text>
-                <Text style={[styles.featureDescription, isDark && styles.textMuted]}>{feature.description}</Text>
+        {/* Quick Stats */}
+        <View style={styles.statsGrid}>
+          <Animated.View entering={FadeInDown.delay(400)} style={styles.statsCard}>
+            <BlurView intensity={40} tint="dark" style={styles.cardContent}>
+              <Coins size={24} color="#7C3AED" />
+              <Text style={styles.statsValue}>1,250</Text>
+              <Text style={styles.statsLabel}>$CAMP Earned</Text>
+            </BlurView>
+          </Animated.View>
+          <Animated.View entering={FadeInDown.delay(600)} style={styles.statsCard}>
+            <BlurView intensity={40} tint="dark" style={styles.cardContent}>
+              <Users size={24} color="#7C3AED" />
+              <Text style={styles.statsValue}>3 → 5</Text>
+              <Text style={styles.statsLabel}>Active Streaks</Text>
+            </BlurView>
+          </Animated.View>
+          <Animated.View entering={FadeInDown.delay(800)} style={styles.statsCard}>
+            <BlurView intensity={40} tint="dark" style={styles.cardContent}>
+              <ImageIcon size={24} color="#7C3AED" />
+              <Text style={styles.statsValue}>Latest</Text>
+              <Text style={styles.statsLabel}>NFT Earned</Text>
+            </BlurView>
+          </Animated.View>
+        </View>
+
+        {/* Notifications */}
+        <Animated.View entering={FadeInDown.delay(1000)} style={styles.notificationCard}>
+          <BlurView intensity={40} tint="dark" style={styles.cardContent}>
+            <View style={styles.notificationHeader}>
+              <Bell size={20} color="#ffffff" />
+              <Text style={styles.notificationTitle}>Notifications</Text>
+            </View>
+            <View style={styles.notification}>
+              <Trophy size={20} color="#7C3AED" />
+              <Text style={styles.notificationText}>Alex invited you to a Streak Squad!</Text>
+              <ChevronRight size={20} color="#ffffff" />
+            </View>
+          </BlurView>
+        </Animated.View>
+
+        {/* Upcoming Quests */}
+        <View style={styles.questsSection}>
+          <Text style={styles.sectionTitle}>Upcoming Quests</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.questsScroll}>
+            {quests.map((quest, index) => (
+              <Animated.View key={index} entering={FadeInDown.delay(1200 + index * 200)} style={styles.questCard}>
+                <BlurView intensity={40} tint="dark" style={styles.cardContent}>
+                  <quest.icon size={24} color="#7C3AED" />
+                  <Text style={styles.questTitle}>{quest.title}</Text>
+                  <Text style={styles.questLocation}>{quest.location}</Text>
+                  <Text style={styles.questReward}>{quest.reward}</Text>
+                </BlurView>
               </Animated.View>
             ))}
-          </View>
-        </LinearGradient>
+          </ScrollView>
+        </View>
       </ScrollView>
     </SafeAreaView>
   )
@@ -72,96 +161,137 @@ export default function LandingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#ffffff",
-  },
-  containerDark: {
-    backgroundColor: "#0f172a",
+    backgroundColor: "#000000",
   },
   scrollContent: {
-    flexGrow: 1,
+    padding: 16,
   },
-  gradient: {
-    flex: 1,
-    padding: 20,
+  attendanceCard: {
+    marginBottom: 24,
   },
-  heroContainer: {
+  cardContent: {
+    borderRadius: 20,
+    padding: 24,
     alignItems: "center",
-    paddingVertical: 40,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    textAlign: "center",
-    color: "#1e293b",
-    marginBottom: 8,
+  progressRing: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
   },
-  subtitle: {
+  progressContent: {
+    position: "absolute",
+    alignItems: "center",
+  },
+  progressDay: {
+    color: "#ffffff",
+    fontSize: 14,
+    opacity: 0.8,
+  },
+  progressText: {
+    color: "#ffffff",
     fontSize: 24,
-    fontWeight: "600",
-    textAlign: "center",
-    color: "#334155",
-    marginBottom: 16,
+    fontWeight: "bold",
   },
-  description: {
-    fontSize: 16,
-    textAlign: "center",
-    color: "#64748b",
-    marginBottom: 32,
-    paddingHorizontal: 20,
+  checkInButton: {
+    width: "100%",
   },
-  button: {
+  checkInTouchable: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#2563eb",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    justifyContent: "center",
+    backgroundColor: "#7C3AED",
+    padding: 16,
     borderRadius: 12,
     gap: 8,
   },
-  buttonText: {
+  checkInText: {
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
   },
-  featuresContainer: {
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 16,
-    marginTop: 40,
+    marginBottom: 24,
   },
-  featureCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  featureCardDark: {
-    backgroundColor: "#1e293b",
-  },
-  featureIcon: {
+  statsCard: {
+    width: CARD_WIDTH,
     marginBottom: 16,
   },
-  featureTitle: {
+  statsValue: {
+    color: "#ffffff",
     fontSize: 20,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 8,
+    fontWeight: "bold",
+    marginTop: 12,
   },
-  featureDescription: {
+  statsLabel: {
+    color: "rgba(255, 255, 255, 0.6)",
     fontSize: 14,
-    color: "#64748b",
-    lineHeight: 20,
   },
-  textLight: {
-    color: "#f8fafc",
+  notificationCard: {
+    marginBottom: 24,
   },
-  textMuted: {
-    color: "#94a3b8",
+  notificationHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 16,
+  },
+  notificationTitle: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  notification: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    padding: 12,
+    borderRadius: 12,
+    gap: 12,
+  },
+  notificationText: {
+    flex: 1,
+    color: "#ffffff",
+    fontSize: 14,
+  },
+  questsSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 16,
+  },
+  questsScroll: {
+    paddingRight: 16,
+    gap: 16,
+  },
+  questCard: {
+    width: 200,
+  },
+  questTitle: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 12,
+  },
+  questLocation: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
+    marginTop: 4,
+  },
+  questReward: {
+    color: "#7C3AED",
+    fontSize: 14,
+    fontWeight: "600",
+    marginTop: 8,
   },
 })
 
