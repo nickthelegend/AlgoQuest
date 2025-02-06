@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router"
 import { StyleSheet } from "react-native"
-import { Home, Search, Clock, User } from "lucide-react-native"
+import { Home, Search, Clock, User, WalletCardsIcon, Users } from "lucide-react-native"
 import { BlurView } from "expo-blur"
 import Animated, { useAnimatedStyle, withSpring } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -74,17 +74,17 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="explore"
+          name="quest-map"
           options={{
             title: "Search",
             tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Search} color={color} size={28} focused={focused} />,
           }}
         />
         <Tabs.Screen
-          name="recent"
+          name="wallet"
           options={{
             title: "Recent",
-            tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Clock} color={color} size={28} focused={focused} />,
+            tabBarIcon: ({ color, focused }) => <TabBarIcon icon={WalletCardsIcon} color={color} size={28} focused={focused} />,
           }}
         />
         <Tabs.Screen
@@ -92,6 +92,15 @@ export default function TabLayout() {
           options={{
             title: "Profile",
             tabBarIcon: ({ color, focused }) => <TabBarIcon icon={User} color={color} size={28} focused={focused} />,
+          }}
+        />
+
+
+    <Tabs.Screen
+          name="connect"
+          options={{
+            title: "Profile",
+            tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Users} color={color} size={28} focused={focused} />,
           }}
         />
       </Tabs>
