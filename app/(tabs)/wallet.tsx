@@ -51,9 +51,17 @@ export default function WalletScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [copied, setCopied] = useState(false)
   const [publicAddress, setPublicAddress] = useState<string>("")
-  console.log(publicAddress)
+  const [algoBalance, setAlgoBalance] = useState<number>(0)
+  const [algoPrice, setAlgoPrice] = useState<number>(0)
+
   useEffect(() => {
     loadWalletAddress()
+  }, [])
+
+  useEffect(() => {
+    fetchAlgoPrice()
+    const interval = setInterval(fetchAlgoPrice, 60000) // Refresh every minute
+    return () => clearInterval(interval)
   }, [])
 
   const loadWalletAddress = async () => {
@@ -70,7 +78,10 @@ export default function WalletScreen() {
         const account = algosdk.mnemonicToSecretKey(mnemonic)
         // Ensure we're getting the address as a string
         if (account && account.addr) {
-          setPublicAddress(account.addr.toString())
+          const address = account.addr.toString()
+          setPublicAddress(address)
+          getAlgoBalance(address)
+          fetchAlgoPrice()
         } else {
           throw new Error("Invalid account data")
         }
@@ -81,6 +92,28 @@ export default function WalletScreen() {
     } catch (error) {
       console.error("Error loading wallet address:", error)
       Alert.alert("Error", "Failed to load wallet address")
+    }
+  }
+
+  const fetchAlgoPrice = async () => {
+    try {
+      const response = await fetch("https://mainnet.analytics.tinyman.org/api/v1/assets/0/")
+      const data = await response.json()
+      setAlgoPrice(Number(data.price_in_usd))
+    } catch (error) {
+      console.error("Error fetching ALGO price:", error)
+    }
+  }
+
+  const getAlgoBalance = async (address: string) => {
+    try {
+      const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
+      const accountInfo = await algodClient.accountInformation(address).do()
+      // Convert microAlgos to Algos (1 Algo = 1,000,000 microAlgos)
+      console.log(accountInfo.amount.toString())
+      setAlgoBalance(accountInfo.amount.toString() / 1000000)
+    } catch (error) {
+      console.error("Error fetching ALGO balance:", error)
     }
   }
 
@@ -116,11 +149,11 @@ export default function WalletScreen() {
   }
 
   // Format address for display
-  const formatAddress = (address: string) => {
-    if (!address) return "Loading..."
-    if (address.length <= 12) return address
-    return `${address.slice(0, 6)}...${address.slice(-6)}`
-  }
+  // const formatAddress = (address: string) => {
+  //   if (!address) return "Loading..."
+  //   if (address.length <= 12) return address
+  //   return `${address.slice(0, 6)}...${address.slice(-6)}`
+  // }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -137,14 +170,14 @@ export default function WalletScreen() {
               <Wallet size={24} color="#ffffff" />
               <Text style={styles.balanceLabel}>ALGO Balance</Text>
             </View>
-            <Text style={styles.balanceAmount}>25.547 ALGO</Text>
-            <Text style={styles.balanceUsd}>≈ $10.22 USD</Text>
+            <Text style={styles.balanceAmount}>{algoBalance.toFixed(3)} ALGO</Text>
+            <Text style={styles.balanceUsd}>≈ ${(algoBalance * algoPrice).toFixed(2)} USD</Text>
 
             <View style={styles.addressSection}>
               <Text style={styles.addressLabel}>Wallet Address</Text>
               <View style={styles.addressContainer}>
                 <Text style={styles.address} numberOfLines={1}>
-                  {publicAddress}
+                  {(publicAddress)}
                 </Text>
                 <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
                   {copied ? <Check size={16} color="#4ADE80" /> : <Copy size={16} color="#ffffff" />}
@@ -193,7 +226,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingTop: 30,
+    paddingTop: 10,
   },
   header: {
     marginBottom: 24,
