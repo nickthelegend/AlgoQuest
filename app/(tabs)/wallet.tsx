@@ -1,6 +1,7 @@
 "use client"
 
-import { View, Text, Image, StyleSheet, Dimensions, TouchableOpacity, RefreshControl } from "react-native"
+import "react-native-get-random-values"
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, RefreshControl, Alert } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import Animated, {
   FadeInDown,
@@ -11,8 +12,11 @@ import Animated, {
   useSharedValue,
 } from "react-native-reanimated"
 import { BlurView } from "expo-blur"
-import { Copy, Send, Wallet, ArrowDown } from "lucide-react-native"
-import { useState } from "react"
+import { Copy, Send, Wallet, ArrowDown, Check } from "lucide-react-native"
+import { useState, useEffect } from "react"
+import * as Clipboard from "expo-clipboard"
+import * as SecureStore from "expo-secure-store"
+import algosdk from "algosdk"
 
 const { width } = Dimensions.get("window")
 const CARD_WIDTH = width * 0.9
@@ -45,6 +49,40 @@ const mockNFTs = [
 export default function WalletScreen() {
   const scrollY = useSharedValue(0)
   const [refreshing, setRefreshing] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [publicAddress, setPublicAddress] = useState<string>("")
+  console.log(publicAddress)
+  useEffect(() => {
+    loadWalletAddress()
+  }, [])
+
+  const loadWalletAddress = async () => {
+    try {
+      const mnemonic = await SecureStore.getItemAsync("mnemonic")
+
+      if (!mnemonic) {
+        Alert.alert("No Mnemonic", "No mnemonic found in secure storage.")
+        return
+      }
+
+      try {
+        // Convert mnemonic to secret key and get address
+        const account = algosdk.mnemonicToSecretKey(mnemonic)
+        // Ensure we're getting the address as a string
+        if (account && account.addr) {
+          setPublicAddress(account.addr.toString())
+        } else {
+          throw new Error("Invalid account data")
+        }
+      } catch (error) {
+        console.error("Error converting mnemonic:", error)
+        Alert.alert("Error", "Failed to convert mnemonic to address")
+      }
+    } catch (error) {
+      console.error("Error loading wallet address:", error)
+      Alert.alert("Error", "Failed to load wallet address")
+    }
+  }
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -65,8 +103,23 @@ export default function WalletScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true)
-    // Add your refresh logic here
-    setTimeout(() => setRefreshing(false), 2000)
+    await loadWalletAddress()
+    setRefreshing(false)
+  }
+
+  const copyToClipboard = async () => {
+    if (publicAddress) {
+      await Clipboard.setStringAsync(publicAddress)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  // Format address for display
+  const formatAddress = (address: string) => {
+    if (!address) return "Loading..."
+    if (address.length <= 12) return address
+    return `${address.slice(0, 6)}...${address.slice(-6)}`
   }
 
   return (
@@ -77,23 +130,28 @@ export default function WalletScreen() {
         scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ffffff" />}
       >
-        {/* Balance Card */}
+        {/* Balance Cards */}
         <Animated.View entering={FadeInDown.delay(200)} style={[styles.header, headerStyle]}>
           <BlurView intensity={40} tint="dark" style={styles.balanceCard}>
             <View style={styles.balanceHeader}>
               <Wallet size={24} color="#ffffff" />
-              <Text style={styles.balanceLabel}>Total Balance</Text>
+              <Text style={styles.balanceLabel}>ALGO Balance</Text>
             </View>
-            <Text style={styles.balanceAmount}>2,450 CAMP</Text>
-            <Text style={styles.balanceUsd}>≈ $245.00 USD</Text>
-            <View style={styles.addressContainer}>
-              <Text style={styles.address} numberOfLines={1}>
-                ALGO1234...ABCD
-              </Text>
-              <TouchableOpacity>
-                <Copy size={16} color="#ffffff" />
-              </TouchableOpacity>
+            <Text style={styles.balanceAmount}>25.547 ALGO</Text>
+            <Text style={styles.balanceUsd}>≈ $10.22 USD</Text>
+
+            <View style={styles.addressSection}>
+              <Text style={styles.addressLabel}>Wallet Address</Text>
+              <View style={styles.addressContainer}>
+                <Text style={styles.address} numberOfLines={1}>
+                  {publicAddress}
+                </Text>
+                <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
+                  {copied ? <Check size={16} color="#4ADE80" /> : <Copy size={16} color="#ffffff" />}
+                </TouchableOpacity>
+              </View>
             </View>
+
             <View style={styles.actionButtons}>
               <TouchableOpacity style={styles.actionButton}>
                 <ArrowDown size={20} color="#ffffff" />
@@ -114,7 +172,6 @@ export default function WalletScreen() {
             {mockNFTs.map((nft, index) => (
               <Animated.View key={nft.id} entering={FadeInUp.delay(400 + index * 200)} style={styles.nftCard}>
                 <BlurView intensity={40} tint="dark" style={styles.nftCardContent}>
-                  <Image source={{ uri: nft.image }} style={styles.nftImage} />
                   <View style={styles.nftInfo}>
                     <Text style={styles.nftName}>{nft.name}</Text>
                     <Text style={styles.nftRarity}>{nft.rarity}</Text>
@@ -136,6 +193,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
+    paddingTop: 30,
   },
   header: {
     marginBottom: 24,
@@ -169,18 +227,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 16,
   },
+  addressSection: {
+    marginBottom: 16,
+  },
+  addressLabel: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
+    marginBottom: 8,
+  },
   addressContainer: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
-    padding: 8,
+    padding: 12,
     borderRadius: 8,
-    marginBottom: 16,
   },
   address: {
     color: "#ffffff",
     flex: 1,
+    fontSize: 14,
+  },
+  copyButton: {
+    padding: 4,
   },
   actionButtons: {
     flexDirection: "row",
@@ -218,16 +287,10 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   nftCardContent: {
-    padding: 12,
+    padding: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 16,
-  },
-  nftImage: {
-    width: "100%",
-    height: 200,
-    borderRadius: 12,
-    marginBottom: 12,
   },
   nftInfo: {
     gap: 4,
