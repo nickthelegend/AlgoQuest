@@ -23,7 +23,7 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
-            contentStyle: { backgroundColor: "#000000" },
+            contentStyle: { backgroundColor: "#000000", paddingTop:80 },
           }}
         />
         <Header onMenuPress={() => setMenuVisible(true)} />

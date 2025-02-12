@@ -51,7 +51,7 @@ export default function Header({ onMenuPress }: HeaderProps) {
             </TouchableOpacity>
           </View>
         </View>
-        <Text style={styles.greeting}>Hello, Nick!</Text>
+        {/* <Text style={styles.greeting}>Hello, Nick!</Text> */}
       </BlurView>
     </Animated.View>
   )

@@ -5,6 +5,7 @@ import { BlurView } from "expo-blur"
 import Animated, { FadeIn, FadeOut, SlideInLeft, SlideOutLeft } from "react-native-reanimated"
 import { Settings, LogOut, Vote, Trophy, Calendar, Globe, HelpCircle, KeyRound } from "lucide-react-native"
 import { Link, type LinkProps } from "expo-router"
+import { LinearGradient } from "expo-linear-gradient"
 
 const { width } = Dimensions.get("window")
 const MENU_WIDTH = width * 0.75
@@ -52,7 +53,8 @@ export default function SideMenu({ visible, onClose }: SideMenuProps) {
     <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.overlay}>
       <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
       <Animated.View entering={SlideInLeft} exiting={SlideOutLeft} style={styles.menuContainer}>
-        <BlurView intensity={40} tint="dark" style={styles.menu}>
+        <BlurView intensity={80} tint="dark" style={styles.menu}>
+          <LinearGradient colors={["rgba(0,0,0,0.9)", "rgba(0,0,0,0.95)"]} style={StyleSheet.absoluteFill} />
           <View style={styles.header}>
             <Text style={styles.title}>Menu</Text>
           </View>
@@ -101,6 +103,7 @@ const styles = StyleSheet.create({
   menuContainer: {
     width: MENU_WIDTH,
     height: "100%",
+    backgroundColor: "rgba(0,0,0,0.95)",
   },
   menu: {
     flex: 1,
@@ -138,6 +141,7 @@ const styles = StyleSheet.create({
     gap: 16,
     padding: 16,
     borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
   },
   menuItemText: {
     fontSize: 16,
