@@ -31,7 +31,7 @@ export default function Header({ onMenuPress }: HeaderProps) {
             <View style={styles.profile}>
               <AnimatedGradientBorder size={40}>
                 <Image 
-                  source={{ uri: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7B2B6DD035-1075-4F47-B2F1-DABE23BB2ECB%7D-45Wli9AJqOF6pzxNlZ6Axi54cw1bDu.png" }}
+                  source={{ uri: "https://forkast.news/wp-content/uploads/2022/03/NFT-Avatar.png" }}
                   style={styles.avatar}
                 />
               </AnimatedGradientBorder>

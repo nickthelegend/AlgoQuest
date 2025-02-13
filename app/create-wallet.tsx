@@ -1,8 +1,9 @@
 "use client"
-
+import "react-native-url-polyfill/auto"
 import 'react-native-get-random-values';
+
 import { useState } from "react"
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView } from "react-native"
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import Animated, { FadeInDown } from "react-native-reanimated"
@@ -11,6 +12,17 @@ import algosdk from "algosdk"
 import * as SecureStore from "expo-secure-store"
 import { LinearGradient } from "expo-linear-gradient"
 import { ArrowRight, Wallet } from "lucide-react-native"
+import AsyncStorage from "@react-native-async-storage/async-storage"
+import { createClient } from "@supabase/supabase-js"
+
+const supabase = createClient("https://tficheendnovlkzoqoop.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmaWNoZWVuZG5vdmxrem9xb29wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzk0MTM5NjksImV4cCI6MjA1NDk4OTk2OX0.TNCHYkgbgFchghO2FGoC9c_hSm1x1ACtBdzLdFQSbPE", {
+  auth: {
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+})
 
 interface FormData {
   name: string
@@ -29,19 +41,39 @@ export default function CreateWalletScreen() {
 
   const handleCreateAccount = async () => {
     try {
-      // Ensure crypto is available
-      if (typeof crypto === 'undefined') {
-        throw new Error('crypto not available');
+      const account = algosdk.generateAccount()
+      const mnemonic = algosdk.secretKeyToMnemonic(account.sk)
+      const address = account.addr.toString()
+
+      // Store in SecureStore
+      await SecureStore.setItemAsync("mnemonic", mnemonic)
+      await SecureStore.setItemAsync("userProfile", JSON.stringify(formData))
+
+      // Store in Supabase
+      const { data, error } = await supabase
+        .from("users")
+        .insert([
+          {
+            full_name: formData.name,
+            roll_number: formData.rollNumber,
+            branch: formData.branch,
+            wallet_address: address,
+            created_at: new Date().toISOString(),
+          },
+        ])
+        .select()
+
+      if (error) {
+        console.error("Error storing user data:", error)
+        Alert.alert("Error", "Failed to store user data")
+        return
       }
-      const account = algosdk.generateAccount();
-      const mnemonic = algosdk.secretKeyToMnemonic(account.sk);
-      setMnemonic(mnemonic);
-      await SecureStore.setItemAsync("mnemonic", mnemonic);
-      await SecureStore.setItemAsync("userProfile", JSON.stringify(formData));
-      setStep("mnemonic");
+
+      setMnemonic(mnemonic)
+      setStep("mnemonic")
     } catch (error) {
-      console.error("Error creating wallet:", error);
-      // You might want to show an error message to the user here
+      console.error("Error creating wallet:", error)
+      Alert.alert("Error", "Failed to create wallet")
     }
   }
 
@@ -255,3 +287,4 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 })
+

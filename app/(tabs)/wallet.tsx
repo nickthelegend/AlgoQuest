@@ -1,7 +1,7 @@
 "use client"
 
 import "react-native-get-random-values"
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, RefreshControl, Alert } from "react-native"
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, RefreshControl, Alert, Linking } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import Animated, {
   FadeInDown,
@@ -173,6 +173,14 @@ export default function WalletScreen() {
             <Text style={styles.balanceAmount}>{algoBalance.toFixed(3)} ALGO</Text>
             <Text style={styles.balanceUsd}>≈ ${(algoBalance * algoPrice).toFixed(2)} USD</Text>
 
+            <TouchableOpacity
+              style={styles.dispenserButton}
+              onPress={() => Linking.openURL("https://bank.testnet.algorand.network/")}
+            >
+              <Text style={styles.dispenserText}>Want Algos?</Text>
+              <Text style={styles.dispenserHighlight}>Head to Algorand Dispenser</Text>
+            </TouchableOpacity>
+
             <View style={styles.addressSection}>
               <Text style={styles.addressLabel}>Wallet Address</Text>
               <View style={styles.addressContainer}>
@@ -336,6 +344,27 @@ const styles = StyleSheet.create({
   nftRarity: {
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 14,
+  },
+  dispenserButton: {
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 12,
+    marginBottom: 20,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(124, 58, 237, 0.3)",
+  },
+  dispenserText: {
+    color: "#ffffff",
+    fontSize: 14,
+    opacity: 0.8,
+  },
+  dispenserHighlight: {
+    color: "#7C3AED",
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 4,
   },
 })
 

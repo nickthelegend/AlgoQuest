@@ -27,7 +27,7 @@ export default function ProfileScreen() {
           <BlurView intensity={40} tint="dark" style={styles.profileCard}>
             <Image
               source={{
-                uri: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
+                uri: "https://forkast.news/wp-content/uploads/2022/03/NFT-Avatar.png",
               }}
               style={styles.avatar}
             />
