@@ -27,12 +27,12 @@ const menuItems: Array<{
   { icon: Vote, label: "DAO Proposals", href: "/[sidebar)/dao", section: "Campus" },
   { icon: Trophy, label: "Leaderboard", href: "/[sidebar)/leaderboard", section: "Campus" },
   { icon: Calendar, label: "Events Calendar", href: "/[sidebar)/events", section: "Campus" },
-  { icon: Globe, label: "Campus Metaverse", href: "/metaverse", section: "Campus" },
+  { icon: Globe, label: "Campus Metaverse", href: "/[sidebar)/metaverse", section: "Campus" },
 
   // Help & Settings
   { icon: HelpCircle, label: "Help/FAQ", href: "/[sidebar)/help", section: "Support" },
   { icon: Settings, label: "Settings", href: "/[sidebar)/settings", section: "Support" },
-  { icon: KeyRound, label: "Wallet Settings", href: "/wallet-settings", section: "Support" },
+  { icon: KeyRound, label: "Wallet Settings", href: "/[sidebar)/wallet-settings", section: "Support" },
 ]
 
 export default function SideMenu({ visible, onClose }: SideMenuProps) {
