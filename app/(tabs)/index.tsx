@@ -1,4 +1,4 @@
-"use client"
+import "react-native-get-random-values";
 
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"

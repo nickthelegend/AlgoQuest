@@ -1,55 +1,93 @@
-"use client"
-import "react-native-url-polyfill/auto"
-import 'react-native-get-random-values';
+"use client";
+import "react-native-get-random-values";
+import { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { BlurView } from "expo-blur";
+import Animated, { FadeInDown } from "react-native-reanimated";
+import { router } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import { LinearGradient } from "expo-linear-gradient";
+import { ArrowRight, Wallet } from "lucide-react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createClient } from "@supabase/supabase-js";
+import algosdk from "algosdk";
 
-import { useState } from "react"
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert } from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
-import { BlurView } from "expo-blur"
-import Animated, { FadeInDown } from "react-native-reanimated"
-import { router } from "expo-router"
-import algosdk from "algosdk"
-import * as SecureStore from "expo-secure-store"
-import { LinearGradient } from "expo-linear-gradient"
-import { ArrowRight, Wallet } from "lucide-react-native"
-import AsyncStorage from "@react-native-async-storage/async-storage"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient("https://tficheendnovlkzoqoop.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmaWNoZWVuZG5vdmxrem9xb29wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzk0MTM5NjksImV4cCI6MjA1NDk4OTk2OX0.TNCHYkgbgFchghO2FGoC9c_hSm1x1ACtBdzLdFQSbPE", {
-  auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-})
+const supabase = createClient(
+  "https://tficheendnovlkzoqoop.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmaWNoZWVuZG5vdmxrem9xb29wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzk0MTM5NjksImV4cCI6MjA1NDk4OTk2OX0.TNCHYkgbgFchghO2FGoC9c_hSm1x1ACtBdzLdFQSbPE",
+  {
+    auth: {
+      storage: AsyncStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+  }
+);
 
 interface FormData {
-  name: string
-  rollNumber: string
-  branch: string
+  name: string;
+  rollNumber: string;
+  branch: string;
 }
 
 export default function CreateWalletScreen() {
-  const [step, setStep] = useState<"form" | "mnemonic">("form")
+  const [step, setStep] = useState<"form" | "mnemonic">("form");
   const [formData, setFormData] = useState<FormData>({
     name: "",
     rollNumber: "",
     branch: "",
-  })
-  const [mnemonic, setMnemonic] = useState("")
+  });
+  const [mnemonic, setMnemonic] = useState("");
+  const [address, setAddress] = useState("");
 
   const handleCreateAccount = async () => {
     try {
-      const account = algosdk.generateAccount()
-      const mnemonic = algosdk.secretKeyToMnemonic(account.sk)
-      const address = account.addr.toString()
+      console.log("handleCreateAccount: Starting account generation");
+      // Call your Node.js server to generate the account data
+      const response = await fetch(
+        "https://algorand-generate-account.vercel.app/generateaccount"
+      );
+      if (!response.ok) {
+        console.error("handleCreateAccount: Error fetching account data", response.status);
+        Alert.alert("Error", "Failed to generate account");
+        return;
+      }
+      const jsonResponse = await response.json();
+      console.log("handleCreateAccount: Received response", jsonResponse);
 
-      // Store in SecureStore
-      await SecureStore.setItemAsync("mnemonic", mnemonic)
-      await SecureStore.setItemAsync("userProfile", JSON.stringify(formData))
+      // Destructure mnemonic and address from the response.
+      const { mnemonic, address: addrObj } = jsonResponse;
+      console.log("handleCreateAccount: Extracted mnemonic", mnemonic);
+      
+      // Extract the publicKey from the address object for debugging.
+      const publicKey = addrObj.publicKey;
+      console.log("handleCreateAccount: Extracted publicKey", publicKey);
 
-      // Store in Supabase
+      // Use the mnemonic to generate the account. (Note: mnemonicToSecretKey expects the mnemonic string.)
+      const account = algosdk.mnemonicToSecretKey(mnemonic);
+      console.log("handleCreateAccount: Account generated from mnemonic", account);
+
+      // Get the generated wallet address from the account.
+      const generatedAddress = account.addr.toString();
+      console.log("handleCreateAccount: Generated address", generatedAddress);
+
+      // Store mnemonic, wallet address, and user profile securely.
+      await SecureStore.setItemAsync("mnemonic", mnemonic);
+      await SecureStore.setItemAsync("walletAddress", generatedAddress);
+      await SecureStore.setItemAsync("userProfile", JSON.stringify(formData));
+      console.log("handleCreateAccount: Data stored in SecureStore");
+
+      // Save user details and wallet address in Supabase.
       const { data, error } = await supabase
         .from("users")
         .insert([
@@ -57,29 +95,32 @@ export default function CreateWalletScreen() {
             full_name: formData.name,
             roll_number: formData.rollNumber,
             branch: formData.branch,
-            wallet_address: address,
+            wallet_address: generatedAddress,
             created_at: new Date().toISOString(),
           },
         ])
-        .select()
+        .select();
 
       if (error) {
-        console.error("Error storing user data:", error)
-        Alert.alert("Error", "Failed to store user data")
-        return
+        console.error("handleCreateAccount: Error storing user data in Supabase", error);
+        Alert.alert("Error", "Failed to store user data");
+        return;
       }
+      console.log("handleCreateAccount: User data stored in Supabase", data);
 
-      setMnemonic(mnemonic)
-      setStep("mnemonic")
+      setMnemonic(mnemonic);
+      setAddress(generatedAddress);
+      setStep("mnemonic");
     } catch (error) {
-      console.error("Error creating wallet:", error)
-      Alert.alert("Error", "Failed to create wallet")
+      console.error("handleCreateAccount: Error creating wallet", error);
+      Alert.alert("Error", "Failed to create wallet");
     }
-  }
+  };
 
   const handleSkip = () => {
-    router.push("/")
-  }
+    console.log("handleSkip: Navigating to home");
+    router.push("/");
+  };
 
   if (step === "mnemonic") {
     return (
@@ -118,7 +159,7 @@ export default function CreateWalletScreen() {
           </Animated.View>
         </ScrollView>
       </SafeAreaView>
-    )
+    );
   }
 
   return (
@@ -126,10 +167,15 @@ export default function CreateWalletScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Animated.View entering={FadeInDown.delay(200)} style={styles.content}>
           <BlurView intensity={40} tint="dark" style={styles.formCard}>
-            <LinearGradient colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]} style={StyleSheet.absoluteFill} />
+            <LinearGradient
+              colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]}
+              style={StyleSheet.absoluteFill}
+            />
             <Wallet size={32} color="#7C3AED" />
             <Text style={styles.title}>Create Your Wallet</Text>
-            <Text style={styles.subtitle}>Enter your details to get started with your campus wallet.</Text>
+            <Text style={styles.subtitle}>
+              Enter your details to get started with your campus wallet.
+            </Text>
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Full Name</Text>
@@ -138,7 +184,9 @@ export default function CreateWalletScreen() {
                 placeholder="Enter your full name"
                 placeholderTextColor="rgba(255, 255, 255, 0.5)"
                 value={formData.name}
-                onChangeText={(text) => setFormData((prev) => ({ ...prev, name: text }))}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({ ...prev, name: text }))
+                }
               />
             </View>
 
@@ -149,7 +197,9 @@ export default function CreateWalletScreen() {
                 placeholder="Enter your roll number"
                 placeholderTextColor="rgba(255, 255, 255, 0.5)"
                 value={formData.rollNumber}
-                onChangeText={(text) => setFormData((prev) => ({ ...prev, rollNumber: text }))}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({ ...prev, rollNumber: text }))
+                }
               />
             </View>
 
@@ -160,7 +210,9 @@ export default function CreateWalletScreen() {
                 placeholder="Enter your branch"
                 placeholderTextColor="rgba(255, 255, 255, 0.5)"
                 value={formData.branch}
-                onChangeText={(text) => setFormData((prev) => ({ ...prev, branch: text }))}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({ ...prev, branch: text }))
+                }
               />
             </View>
 
@@ -176,7 +228,7 @@ export default function CreateWalletScreen() {
         </Animated.View>
       </ScrollView>
     </SafeAreaView>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
@@ -286,5 +338,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
-})
-
+});
