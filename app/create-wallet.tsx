@@ -19,7 +19,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ArrowRight, Wallet } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
-import algosdk from "algosdk";
+import algosdk from "algosdk"
+import algodClient from "@/lib/algoClient";
+import { SignWithSk } from "@/lib/utils";
 
 const supabase = createClient(
   "https://tficheendnovlkzoqoop.supabase.co",
@@ -50,6 +52,9 @@ export default function CreateWalletScreen() {
   const [mnemonic, setMnemonic] = useState("");
   const [address, setAddress] = useState("");
 
+
+  
+
   const handleCreateAccount = async () => {
     try {
       console.log("handleCreateAccount: Starting account generation");
@@ -76,11 +81,14 @@ export default function CreateWalletScreen() {
       // Use the mnemonic to generate the account. (Note: mnemonicToSecretKey expects the mnemonic string.)
       const account = algosdk.mnemonicToSecretKey(mnemonic);
       console.log("handleCreateAccount: Account generated from mnemonic", account);
+      const { sk } = algosdk.mnemonicToSecretKey(mnemonic);
 
       // Get the generated wallet address from the account.
       const generatedAddress = account.addr.toString();
       console.log("handleCreateAccount: Generated address", generatedAddress);
 
+      
+      
       // Store mnemonic, wallet address, and user profile securely.
       await SecureStore.setItemAsync("mnemonic", mnemonic);
       await SecureStore.setItemAsync("walletAddress", generatedAddress);

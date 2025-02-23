@@ -12,11 +12,12 @@ import Animated, {
   useSharedValue,
 } from "react-native-reanimated"
 import { BlurView } from "expo-blur"
-import { Copy, Send, Wallet, ArrowDown, Check } from "lucide-react-native"
+import { Copy, Send, Wallet, ArrowDown, Check, Coins } from "lucide-react-native"
 import { useState, useEffect } from "react"
 import * as Clipboard from "expo-clipboard"
 import * as SecureStore from "expo-secure-store"
 import algosdk from "algosdk"
+import { QUEST_COIN_ASSET_ID } from "@/lib/algoClient"
 
 const { width } = Dimensions.get("window")
 const CARD_WIDTH = width * 0.9
@@ -53,7 +54,10 @@ export default function WalletScreen() {
   const [publicAddress, setPublicAddress] = useState<string>("")
   const [algoBalance, setAlgoBalance] = useState<number>(0)
   const [algoPrice, setAlgoPrice] = useState<number>(0)
-
+// New state for Quest Coins
+const [questCoinBalance, setQuestCoinBalance] = useState<number>(0)
+const [isOptedIn, setIsOptedIn] = useState(false)
+const [optInLoading, setOptInLoading] = useState(false)
   useEffect(() => {
     loadWalletAddress()
   }, [])
@@ -105,13 +109,77 @@ export default function WalletScreen() {
     }
   }
 
+
+
+  const handleOptIn = async () => {
+    try {
+      setOptInLoading(true)
+      const mnemonic = await SecureStore.getItemAsync("mnemonic")
+      if (!mnemonic) {
+        Alert.alert("Error", "No mnemonic found")
+        return
+      }
+
+      const account = algosdk.mnemonicToSecretKey(mnemonic)
+      const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
+      const assetID = '734399300'
+
+      const suggestedParams = await algodClient.getTransactionParams().do()
+      const optInTxn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+        sender: account.addr,
+        receiver: account.addr,
+        assetIndex: Number(assetID),
+        amount: 0,
+        suggestedParams,
+      })
+
+      const signedTxn = optInTxn.signTxn(account.sk)
+      const { txid } = await algodClient.sendRawTransaction(signedTxn).do()
+      
+      await algosdk.waitForConfirmation(algodClient, txid, 4)
+      
+      // Refresh balances after opt-in
+      await getAlgoBalance(publicAddress)
+      Alert.alert("Success", "Successfully opted in to Quest Coins!")
+      setIsOptedIn(true)
+    } catch (error) {
+      console.error("Error opting in:", error)
+      Alert.alert("Error", "Failed to opt in to Quest Coins")
+    } finally {
+      setOptInLoading(false)
+    }
+  }
+
+  const checkOptInStatus = async (accountInfo: any) => {
+    try {
+      const assets = accountInfo['assets'] || []
+      
+      const isOptedIn = assets.some((asset: any) => {
+        const assetIdString = asset['assetId'].toString();
+        return assetIdString === QUEST_COIN_ASSET_ID
+      })
+      setIsOptedIn(isOptedIn)
+      console.log(isOptedIn)
+      if (isOptedIn) {
+        const questAsset = assets.find((asset: any) => {
+          const assetIdString = asset['assetId'].toString();
+          return assetIdString === QUEST_COIN_ASSET_ID
+        })
+        setQuestCoinBalance(questAsset ? questAsset.amount.toString() : 0)
+      }
+    } catch (error) {
+      console.error("Error checking opt-in status:", error)
+    }
+  }
   const getAlgoBalance = async (address: string) => {
     try {
       const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
       const accountInfo = await algodClient.accountInformation(address).do()
+      console.log(accountInfo)
       // Convert microAlgos to Algos (1 Algo = 1,000,000 microAlgos)
       console.log(accountInfo.amount.toString())
       setAlgoBalance(accountInfo.amount.toString() / 1000000)
+      await checkOptInStatus(accountInfo)
     } catch (error) {
       console.error("Error fetching ALGO balance:", error)
     }
@@ -206,6 +274,32 @@ export default function WalletScreen() {
           </BlurView>
         </Animated.View>
 
+
+        <Animated.View entering={FadeInDown.delay(300)} style={styles.header}>
+          <BlurView intensity={40} tint="dark" style={styles.balanceCard}>
+            <View style={styles.balanceHeader}>
+              <Coins size={24} color="#ffffff" />
+              <Text style={styles.balanceLabel}>Quest Coins</Text>
+            </View>
+            
+            {isOptedIn ? (
+              <>
+                <Text style={styles.balanceAmount}>{questCoinBalance} Q</Text>
+                <Text style={styles.balanceUsd}>Quest Coins can be earned by completing quests</Text>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={[styles.optInButton, optInLoading && styles.optInButtonDisabled]}
+                onPress={handleOptIn}
+                disabled={optInLoading}
+              >
+                <Text style={styles.optInButtonText}>
+                  {optInLoading ? "Opting In..." : "Opt In to Quest Coins"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </BlurView>
+        </Animated.View>
         {/* NFT Gallery */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>NFT Gallery</Text>
@@ -365,6 +459,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginTop: 4,
+  },
+  optInButton: {
+    backgroundColor: "#7C3AED",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  optInButtonDisabled: {
+    opacity: 0.6,
+  },
+  optInButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 })
 
