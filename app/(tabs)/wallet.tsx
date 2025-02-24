@@ -1,7 +1,7 @@
 "use client"
 
 import "react-native-get-random-values"
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, RefreshControl, Alert, Linking } from "react-native"
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, RefreshControl, Alert, Linking, Image, } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import Animated, {
   FadeInDown,
@@ -47,7 +47,14 @@ const mockNFTs = [
     rarity: "Common",
   },
 ]
+const NFT_SIZE = (width - 48) / 2 // 2 columns with 16px padding and gap
 
+interface NFTAsset {
+  id: number
+  name: string
+  image: string
+  unitName: string
+}
 export default function WalletScreen() {
   const scrollY = useSharedValue(0)
   const [refreshing, setRefreshing] = useState(false)
@@ -61,6 +68,9 @@ const [isOptedIn, setIsOptedIn] = useState(false)
 const [optInLoading, setOptInLoading] = useState(false)
 const [transactionCount, setTransactionCount] = useState(0)
 // const activeAddress = await SecureStore.getItemAsync("walletAddress")
+const [nfts, setNfts] = useState<NFTAsset[]>([])
+const [loading, setLoading] = useState(true)
+
 
   useEffect(() => {
     loadWalletAddress()
@@ -178,18 +188,51 @@ const [transactionCount, setTransactionCount] = useState(0)
   }
   const getAlgoBalance = async (address: string) => {
     try {
+      setLoading(true)
       const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
       const accountInfo = await algodClient.accountInformation(address).do()
-      console.log(accountInfo)
-      // Convert microAlgos to Algos (1 Algo = 1,000,000 microAlgos)
-      console.log(accountInfo.amount.toString())
+
+      // Set ALGO balance
       setAlgoBalance(Number(accountInfo.amount.toString()) / 1000000)
+
+      // Check Quest Coin opt-in status
       await checkOptInStatus(accountInfo)
 
+      // Process NFTs
+      const assets = accountInfo.assets || []
+      const nftPromises = assets.map(async (asset: any) => {
+        try {
+          const assetInfo = await algodClient.getAssetByID(Number(asset.assetId)).do()
 
-      console.log(await algodClient.getAssetByID(Number('734175735')).do());
+          // Check if it's an NFT (total supply of 1 and unit name is "NFT")
+          if (assetInfo.params.total === 1n && assetInfo.params.unitName === "NFT") {
+            let imageUrl = ""
+            if (assetInfo.params.url && assetInfo.params.url.startsWith("ipfs://")) {
+              const ipfsHash = assetInfo.params.url.replace("ipfs://", "")
+              imageUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`
+            }
+
+            return {
+              id: asset.assetId,
+              name: assetInfo.params.name,
+              image: imageUrl,
+              unitName: assetInfo.params.unitName,
+            }
+          }
+          return null
+        } catch (error) {
+          console.error(`Error fetching asset ${asset.assetId}:`, error)
+          return null
+        }
+      })
+
+      const nftResults = await Promise.all(nftPromises)
+      const validNfts = nftResults.filter((nft): nft is NFTAsset => nft !== null)
+      setNfts(validNfts)
     } catch (error) {
-      console.error("Error fetching ALGO balance:", error)
+      console.error("Error fetching account information:", error)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -339,16 +382,36 @@ useEffect(() => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>NFT Gallery</Text>
           <View style={styles.nftGrid}>
-            {mockNFTs.map((nft, index) => (
-              <Animated.View key={nft.id} entering={FadeInUp.delay(400 + index * 200)} style={styles.nftCard}>
-                <BlurView intensity={40} tint="dark" style={styles.nftCardContent}>
-                  <View style={styles.nftInfo}>
-                    <Text style={styles.nftName}>{nft.name}</Text>
-                    <Text style={styles.nftRarity}>{nft.rarity}</Text>
-                  </View>
-                </BlurView>
-              </Animated.View>
-            ))}
+            {loading ? (
+              <Text style={styles.loadingText}>Loading NFTs...</Text>
+            ) : nfts.length > 0 ? (
+              nfts.map((nft, index) => (
+                <Animated.View key={nft.id} entering={FadeInUp.delay(400 + index * 200)} style={styles.nftCard}>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({
+                        pathname: "/nft-details",
+                        params: { assetId: nft.id },
+                      })
+                    }
+                  >
+                    <BlurView intensity={40} tint="dark" style={styles.nftCardContent}>
+                      {nft.image ? (
+                        <Image source={{ uri: nft.image }} style={styles.nftImage} />
+                      ) : (
+                        <View style={[styles.nftImage, styles.nftImagePlaceholder]} />
+                      )}
+                      <View style={styles.nftInfo}>
+                        <Text style={styles.nftName}>{nft.name}</Text>
+                        <Text style={styles.nftUnitName}>{nft.unitName}</Text>
+                      </View>
+                    </BlurView>
+                  </TouchableOpacity>
+                </Animated.View>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>No NFTs found</Text>
+            )}
           </View>
         </View>
       </Animated.ScrollView>
@@ -453,6 +516,8 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   nftCard: {
+    width: NFT_SIZE,
+
     borderRadius: 16,
     overflow: "hidden",
   },
@@ -546,6 +611,33 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 14,
     fontWeight: "600",
+  },
+  
+  nftImage: {
+    width: "100%",
+    aspectRatio: 1,
+  },
+  nftImagePlaceholder: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  },
+  
+  nftUnitName: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 12,
+  },
+  loadingText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 16,
+    textAlign: "center",
+    width: "100%",
+    marginTop: 20,
+  },
+  emptyText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 16,
+    textAlign: "center",
+    width: "100%",
+    marginTop: 20,
   },
 })
 

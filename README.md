@@ -3,7 +3,7 @@
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
 * [ ] Edit the Connections, make it guestures , dragable guestures
-* [ ] Add Functionality to Send and recieve ,
+* [X] Add Functionality to Send and recieve ,
 * [X] Add the Quest Tokens, Index the Assets and show the number of NFTs.
 * [ ] Cron Jobs on Quest Creator, Smart contract
 * [ ] Implement the Maps API, with Geo Fencing, and Quest Creation, Token Collection nearby radius 10m,
