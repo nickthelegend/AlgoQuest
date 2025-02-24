@@ -21,6 +21,7 @@ function TabBarIcon({ color, size, icon: Icon, focused }) {
 
   return (
     <Animated.View style={[animatedStyle]}>
+      
       <Icon size={28} color={color} fill={focused ? color : "transparent"} strokeWidth={focused ? 2 : 1.5} />
     </Animated.View>
   )

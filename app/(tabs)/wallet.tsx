@@ -12,12 +12,13 @@ import Animated, {
   useSharedValue,
 } from "react-native-reanimated"
 import { BlurView } from "expo-blur"
-import { Copy, Send, Wallet, ArrowDown, Check, Coins } from "lucide-react-native"
+import { Copy, Send, Wallet, ArrowDown, Check, Coins,History } from "lucide-react-native"
 import { useState, useEffect } from "react"
 import * as Clipboard from "expo-clipboard"
 import * as SecureStore from "expo-secure-store"
 import algosdk from "algosdk"
 import { QUEST_COIN_ASSET_ID } from "@/lib/algoClient"
+import { router } from "expo-router";
 
 const { width } = Dimensions.get("window")
 const CARD_WIDTH = width * 0.9
@@ -58,6 +59,9 @@ export default function WalletScreen() {
 const [questCoinBalance, setQuestCoinBalance] = useState<number>(0)
 const [isOptedIn, setIsOptedIn] = useState(false)
 const [optInLoading, setOptInLoading] = useState(false)
+const [transactionCount, setTransactionCount] = useState(0)
+// const activeAddress = await SecureStore.getItemAsync("walletAddress")
+
   useEffect(() => {
     loadWalletAddress()
   }, [])
@@ -166,6 +170,7 @@ const [optInLoading, setOptInLoading] = useState(false)
           return assetIdString === QUEST_COIN_ASSET_ID
         })
         setQuestCoinBalance(questAsset ? questAsset.amount.toString() : 0)
+        
       }
     } catch (error) {
       console.error("Error checking opt-in status:", error)
@@ -178,8 +183,11 @@ const [optInLoading, setOptInLoading] = useState(false)
       console.log(accountInfo)
       // Convert microAlgos to Algos (1 Algo = 1,000,000 microAlgos)
       console.log(accountInfo.amount.toString())
-      setAlgoBalance(accountInfo.amount.toString() / 1000000)
+      setAlgoBalance(Number(accountInfo.amount.toString()) / 1000000)
       await checkOptInStatus(accountInfo)
+
+
+      console.log(await algodClient.getAssetByID(Number('734175735')).do());
     } catch (error) {
       console.error("Error fetching ALGO balance:", error)
     }
@@ -215,7 +223,20 @@ const [optInLoading, setOptInLoading] = useState(false)
       setTimeout(() => setCopied(false), 2000)
     }
   }
+useEffect(() => {
+    fetchTransactionCount()
+  }, [])
 
+  const fetchTransactionCount = async () => {
+    if (!publicAddress) return
+    try {
+      const response = await fetch(`https://testnet-idx.4160.nodely.dev/v2/accounts/${publicAddress}/transactions`)
+      const data = await response.json()
+      setTransactionCount(data.transactions?.length || 0)
+    } catch (error) {
+      console.error("Error fetching transaction count:", error)
+    }
+  }
   // Format address for display
   // const formatAddress = (address: string) => {
   //   if (!address) return "Loading..."
@@ -266,12 +287,26 @@ const [optInLoading, setOptInLoading] = useState(false)
                 <ArrowDown size={20} color="#ffffff" />
                 <Text style={styles.actionButtonText}>Receive</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.actionButton}>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => router.push("/send")}
+                >
                 <Send size={20} color="#ffffff" />
                 <Text style={styles.actionButtonText}>Send</Text>
               </TouchableOpacity>
             </View>
+            <View style={styles.transactionSection}>
+              <View style={styles.transactionCount}>
+                <Text style={styles.transactionLabel}>Total Transactions</Text>
+                <Text style={styles.transactionNumber}>{transactionCount}</Text>
+              </View>
+              <TouchableOpacity style={styles.viewTransactionsButton} onPress={() => router.push("/transactions")}>
+                <History size={20} color="#ffffff" />
+                <Text style={styles.viewTransactionsText}>View Transactions</Text>
+                </TouchableOpacity>
+                </View>
           </BlurView>
+          
         </Animated.View>
 
 
@@ -473,6 +508,43 @@ const styles = StyleSheet.create({
   optInButtonText: {
     color: "#ffffff",
     fontSize: 16,
+    fontWeight: "600",
+  },
+  transactionsButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  transactionSection: {
+    marginTop: 20,
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 12,
+  },
+  transactionCount: {
+    marginBottom: 12,
+  },
+  transactionLabel: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
+  },
+  transactionNumber: {
+    color: "#ffffff",
+    fontSize: 24,
+    fontWeight: "bold",
+  },
+  viewTransactionsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    padding: 12,
+    borderRadius: 8,
+  },
+  viewTransactionsText: {
+    color: "#ffffff",
+    fontSize: 14,
     fontWeight: "600",
   },
 })

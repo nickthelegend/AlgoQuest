@@ -17,3 +17,6 @@ export default algodClient;
 
 
 export const QUEST_COIN_ASSET_ID = '734399300'
+
+
+export const indexerClient = new algosdk.Indexer("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'https://testnet-idx.4160.nodely.dev')
