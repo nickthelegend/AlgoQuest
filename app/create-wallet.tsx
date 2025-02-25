@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  ActivityIndicator, // Import ActivityIndicator
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
@@ -19,7 +20,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ArrowRight, Wallet } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
-import algosdk from "algosdk"
+import algosdk from "algosdk";
 import algodClient from "@/lib/algoClient";
 import { SignWithSk } from "@/lib/utils";
 
@@ -51,19 +52,21 @@ export default function CreateWalletScreen() {
   });
   const [mnemonic, setMnemonic] = useState("");
   const [address, setAddress] = useState("");
-
-
-  
+  const [isLoading, setIsLoading] = useState(false); // Loading state
 
   const handleCreateAccount = async () => {
     try {
+      setIsLoading(true);
       console.log("handleCreateAccount: Starting account generation");
       // Call your Node.js server to generate the account data
       const response = await fetch(
         "https://algorand-generate-account.vercel.app/generateaccount"
       );
       if (!response.ok) {
-        console.error("handleCreateAccount: Error fetching account data", response.status);
+        console.error(
+          "handleCreateAccount: Error fetching account data",
+          response.status
+        );
         Alert.alert("Error", "Failed to generate account");
         return;
       }
@@ -73,22 +76,19 @@ export default function CreateWalletScreen() {
       // Destructure mnemonic and address from the response.
       const { mnemonic, address: addrObj } = jsonResponse;
       console.log("handleCreateAccount: Extracted mnemonic", mnemonic);
-      
+
       // Extract the publicKey from the address object for debugging.
       const publicKey = addrObj.publicKey;
       console.log("handleCreateAccount: Extracted publicKey", publicKey);
 
-      // Use the mnemonic to generate the account. (Note: mnemonicToSecretKey expects the mnemonic string.)
+      // Use the mnemonic to generate the account.
       const account = algosdk.mnemonicToSecretKey(mnemonic);
       console.log("handleCreateAccount: Account generated from mnemonic", account);
-      const { sk } = algosdk.mnemonicToSecretKey(mnemonic);
 
       // Get the generated wallet address from the account.
       const generatedAddress = account.addr.toString();
       console.log("handleCreateAccount: Generated address", generatedAddress);
 
-      
-      
       // Store mnemonic, wallet address, and user profile securely.
       await SecureStore.setItemAsync("mnemonic", mnemonic);
       await SecureStore.setItemAsync("walletAddress", generatedAddress);
@@ -110,7 +110,10 @@ export default function CreateWalletScreen() {
         .select();
 
       if (error) {
-        console.error("handleCreateAccount: Error storing user data in Supabase", error);
+        console.error(
+          "handleCreateAccount: Error storing user data in Supabase",
+          error
+        );
         Alert.alert("Error", "Failed to store user data");
         return;
       }
@@ -122,6 +125,8 @@ export default function CreateWalletScreen() {
     } catch (error) {
       console.error("handleCreateAccount: Error creating wallet", error);
       Alert.alert("Error", "Failed to create wallet");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -149,7 +154,8 @@ export default function CreateWalletScreen() {
               <Wallet size={32} color="#7C3AED" />
               <Text style={styles.title}>Your Recovery Phrase</Text>
               <Text style={styles.subtitle}>
-                Write down these 25 words in order and keep them safe. You'll need them to recover your wallet.
+                Write down these 25 words in order and keep them safe. You'll need
+                them to recover your wallet.
               </Text>
               <View style={styles.mnemonicContainer}>
                 {mnemonic.split(" ").map((word, index) => (
@@ -225,12 +231,21 @@ export default function CreateWalletScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.button, !formData.name && styles.buttonDisabled]}
+              style={[
+                styles.button,
+                (!formData.name || isLoading) && styles.buttonDisabled,
+              ]}
               onPress={handleCreateAccount}
-              disabled={!formData.name}
+              disabled={!formData.name || isLoading}
             >
-              <Text style={styles.buttonText}>Create Wallet</Text>
-              <ArrowRight size={20} color="#ffffff" />
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <>
+                  <Text style={styles.buttonText}>Create Wallet</Text>
+                  <ArrowRight size={20} color="#ffffff" />
+                </>
+              )}
             </TouchableOpacity>
           </BlurView>
         </Animated.View>

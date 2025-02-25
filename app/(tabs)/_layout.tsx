@@ -1,12 +1,14 @@
 "use client"
 
 import { Tabs } from "expo-router"
-import { StyleSheet } from "react-native"
+import { StyleSheet, View } from "react-native"
 import { Home, Map, Users, Wallet, User } from "lucide-react-native"
 import { BlurView } from "expo-blur"
 import Animated, { useAnimatedStyle, withSpring } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-
+import { useState } from "react"
+import Header from "@/components/header"
+import SideMenu from "@/components/side-menu"
 function TabBarIcon({ color, size, icon: Icon, focused }) {
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -50,8 +52,11 @@ function FloatingTabBarIcon({ color, size, icon: Icon, focused }) {
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets()
-
+  const [menuVisible, setMenuVisible] = useState(false)
   return (
+    <View style={styles.container}>
+      <Header onMenuPress={() => setMenuVisible(true)} />
+      <SideMenu visible={menuVisible} onClose={() => setMenuVisible(false)} />
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: "#ffffff",
@@ -76,6 +81,11 @@ export default function TabLayout() {
         tabBarLabelStyle: {
           display: "none",
         },
+        sceneStyle: {
+          marginTop:70
+        }
+        
+
       }}
     >
       <Tabs.Screen
@@ -116,6 +126,7 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </View>
   )
 }
 
@@ -145,6 +156,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     overflow: "hidden",
+  },
+  container: {
+    flex: 1,
+    backgroundColor: "#000000",
   },
 })
 

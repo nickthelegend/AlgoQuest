@@ -2,17 +2,28 @@
 
 import { View, Text, TouchableOpacity, Image, StyleSheet, Platform } from "react-native"
 import { BlurView } from "expo-blur"
-import { Menu, Bell, Plus } from "lucide-react-native"
+import { Menu, Bell, Search } from "lucide-react-native"
 import Animated, { FadeIn } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import AnimatedGradientBorder from "./animated-gradient-border"
+import { router } from "expo-router"
 
 interface HeaderProps {
   onMenuPress: () => void;
 }
 
+
+
 export default function Header({ onMenuPress }: HeaderProps) {
   const insets = useSafeAreaInsets()
+
+  const navigateToSearch = () => {
+    router.push("/search")
+  }
+
+  const navigateToNotifications = () => {
+    router.push("/notifications")
+  }
 
   return (
     <Animated.View 
@@ -42,12 +53,12 @@ export default function Header({ onMenuPress }: HeaderProps) {
             </View>
           </View>
           <View style={styles.rightSection}>
-            <TouchableOpacity style={styles.iconButton}>
+          <TouchableOpacity style={styles.iconButton} onPress={navigateToNotifications}>
               <Bell size={24} color="#ffffff" />
               <View style={styles.notificationDot} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton}>
-              <Plus size={24} color="#ffffff" />
+            <TouchableOpacity style={styles.iconButton} onPress={navigateToSearch}>
+              <Search size={24} color="#ffffff" />
             </TouchableOpacity>
           </View>
         </View>
@@ -64,6 +75,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 10,
+    height: 100, // Set a fixed height for the header
   },
   content: {
     padding: 16,

@@ -51,6 +51,7 @@ export default function SideMenu({ visible, onClose }: SideMenuProps) {
 
   return (
     <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.overlay}>
+      
       <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
       <Animated.View entering={SlideInLeft} exiting={SlideOutLeft} style={styles.menuContainer}>
         <BlurView intensity={80} tint="dark" style={styles.menu}>

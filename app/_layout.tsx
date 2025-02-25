@@ -26,11 +26,10 @@ export default function RootLayout() {
           <Stack
             screenOptions={{
               headerShown: false,
-              contentStyle: { backgroundColor: "#000000",paddingTop:80 },
+              contentStyle: { backgroundColor: "#000000" },
             }}
           />
-          <Header onMenuPress={() => setMenuVisible(true)} />
-          <SideMenu visible={menuVisible} onClose={() => setMenuVisible(false)} />
+          
         </View>
       </GestureHandlerRootView>
     </WalletProvider>
