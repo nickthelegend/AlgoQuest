@@ -12,6 +12,11 @@
       "supportsTablet": true
     },
     "android": {
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyACn5LbHpFrDZrJ9pkg1OLc4EkntvcmNsA"
+        }
+      },
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -22,7 +27,8 @@
     "android.permission.BLUETOOTH_ADMIN",
     "android.permission.ACCESS_FINE_LOCATION",
     "android.permission.BLUETOOTH_CONNECT",
-    "android.permission.BLUETOOTH_SCAN"
+    "android.permission.BLUETOOTH_SCAN",
+    "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {

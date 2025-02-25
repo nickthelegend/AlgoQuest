@@ -13,7 +13,7 @@ import Animated, {
 import { BlurView } from "expo-blur"
 import { BookOpen, Coffee, Users, Building2, TreePine, Dumbbell, Camera, Scan } from "lucide-react-native"
 import { useEffect } from "react"
-
+import { router } from "expo-router";
 const { width } = Dimensions.get("window")
 const ZONE_SIZE = (width - 64) / 3
 
@@ -63,8 +63,8 @@ export default function QuestMapScreen() {
       <View style={styles.zonesGrid}>
         {zones.map((zone, index) => (
           <Animated.View key={zone.id} entering={FadeIn.delay(400 + index * 100)} style={styles.zoneWrapper}>
-            <TouchableOpacity>
-              <BlurView intensity={40} tint="dark" style={styles.zone}>
+            <TouchableOpacity onPress={()=>{router.push("/qmap")}}>
+              <BlurView intensity={40} tint="dark" style={styles.zone} >
                 <zone.icon size={24} color={zone.active ? "#7C3AED" : "#ffffff"} />
                 {zone.active && (
                   <View style={styles.activeIndicator}>
