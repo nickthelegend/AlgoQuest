@@ -30,7 +30,8 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     // Add top padding to account for header
-    paddingTop: 140,
+    // paddingTop: 140,
+    paddingBottom:90
   },
 })
 

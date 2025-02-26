@@ -3,12 +3,14 @@
 import { useState, useEffect, useRef } from "react"
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated as RNAnimated } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import MapView, { Marker, Circle } from "react-native-maps"
-import { Gift, Navigation, Trophy, Clock, MapPin, ChevronUp, ChevronDown } from "lucide-react-native"
+import MapView, { Marker, Circle, PROVIDER_GOOGLE } from "react-native-maps"
+import { Navigation, Trophy, Clock, MapPin, ChevronUp, ChevronDown, ArrowLeft } from "lucide-react-native"
 import * as Location from "expo-location"
 import { getDistance } from "geolib"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated"
+import { router } from "expo-router"
+import { Image } from 'expo-image';
 
 const { width, height } = Dimensions.get("window")
 const LIBRARY_LOCATION = {
@@ -41,6 +43,91 @@ const DUMMY_QUEST: Quest = {
   location: LIBRARY_LOCATION,
   timeRemaining: "2 hours left",
 }
+
+// Custom map style
+const MAP_STYLE = [
+  {
+    featureType: "all",
+    elementType: "all",
+    stylers: [
+      {
+        invert_lightness: true,
+      },
+      {
+        saturation: "-9",
+      },
+      {
+        lightness: "0",
+      },
+      {
+        visibility: "simplified",
+      },
+    ],
+  },
+  {
+    featureType: "landscape.man_made",
+    elementType: "all",
+    stylers: [
+      {
+        weight: "1.00",
+      },
+    ],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "all",
+    stylers: [
+      {
+        weight: "0.49",
+      },
+    ],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels",
+    stylers: [
+      {
+        visibility: "on",
+      },
+      {
+        weight: "0.01",
+      },
+      {
+        lightness: "-7",
+      },
+      {
+        saturation: "-35",
+      },
+    ],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels.text",
+    stylers: [
+      {
+        visibility: "on",
+      },
+    ],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels.text.stroke",
+    stylers: [
+      {
+        visibility: "off",
+      },
+    ],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels.icon",
+    stylers: [
+      {
+        visibility: "on",
+      },
+    ],
+  },
+]
 
 export default function QMapScreen() {
   const [location, setLocation] = useState<Location.LocationObject | null>(null)
@@ -176,8 +263,8 @@ export default function QMapScreen() {
     return (
       <Animated.View entering={FadeIn} style={styles.modalContainer}>
         <View style={styles.modalContent}>
-        <LinearGradient colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]} style={StyleSheet.absoluteFill} />
-        <View style={styles.modalHeader}>
+          <LinearGradient colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]} style={StyleSheet.absoluteFill} />
+          <View style={styles.modalHeader}>
             <View
               style={[
                 styles.statusBadge,
@@ -222,7 +309,15 @@ export default function QMapScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <MapView ref={mapRef} style={styles.map} region={region} showsUserLocation showsMyLocationButton>
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        region={region}
+        showsUserLocation
+        showsMyLocationButton={false}
+        provider={PROVIDER_GOOGLE}
+        customMapStyle={MAP_STYLE}
+      >
         {/* Geofence Circle */}
         <Circle
           center={LIBRARY_LOCATION}
@@ -239,18 +334,29 @@ export default function QMapScreen() {
           tracksViewChanges={false}
         >
           <View
-            style={[
-              styles.markerContainer,
-              {
-                backgroundColor: `${getStatusColor(DUMMY_QUEST.status)}20`,
-                borderColor: getStatusColor(DUMMY_QUEST.status),
-              },
-            ]}
+            // style={[
+            //   styles.markerContainer,
+            //   {
+            //     backgroundColor: `${getStatusColor(DUMMY_QUEST.status)}20`,
+            //     borderColor: getStatusColor(DUMMY_QUEST.status),
+            //   },
+            // ]}
           >
-            <Gift size={24} color={getStatusColor(DUMMY_QUEST.status)} />
+            <Image
+              source="treasure-chest"
+              style={styles.markerImage}
+              // resizeMode="contain"
+            />
           </View>
         </Marker>
       </MapView>
+
+      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <View style={styles.backButtonContent}>
+          <LinearGradient colors={["#1F1F1F", "#000000"]} style={StyleSheet.absoluteFill} />
+          <ArrowLeft size={24} color="#ffffff" />
+        </View>
+      </TouchableOpacity>
 
       {/* Location Error Message */}
       {errorMsg && (
@@ -286,8 +392,7 @@ export default function QMapScreen() {
       {/* Bottom Quest Info Box */}
       <Animated.View style={[styles.bottomSheet, animatedBottomSheetStyle]}>
         <View style={styles.bottomSheetContent}>
-        <LinearGradient colors={["#1F1F1F", "#000000"]} style={StyleSheet.absoluteFill} />
-
+          <LinearGradient colors={["#1F1F1F", "#000000"]} style={StyleSheet.absoluteFill} />
 
           {/* Handle for expanding/collapsing */}
           <TouchableOpacity style={styles.handleContainer} onPress={toggleExpand}>
@@ -385,6 +490,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     backgroundColor: "rgba(124, 58, 237, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  markerImage: {
+    width: 30,
+    height: 30,
   },
   errorContainer: {
     position: "absolute",
@@ -620,6 +731,22 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  backButton: {
+    position: "absolute",
+    top: 40,
+    left: 16,
+    zIndex: 10,
+  },
+  backButtonContent: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    overflow: "hidden",
   },
 })
 

@@ -22,12 +22,14 @@
     "@supabase/supabase-js": "^2.48.1",
     "algosdk": "^3.2.0",
     "expo": "~52.0.33",
+    "expo-asset": "~11.0.4",
     "expo-blur": "~14.0.3",
     "expo-clipboard": "^7.0.1",
     "expo-constants": "~17.0.5",
     "expo-dev-client": "~5.0.12",
     "expo-font": "~13.0.3",
     "expo-haptics": "~14.0.1",
+    "expo-image": "^2.0.6",
     "expo-linear-gradient": "^14.0.2",
     "expo-linking": "~7.0.5",
     "expo-local-authentication": "~15.0.2",
@@ -55,7 +57,8 @@
     "react-native-svg": "^15.11.1",
     "react-native-url-polyfill": "^2.0.0",
     "react-native-web": "~0.19.13",
-    "react-native-webview": "13.12.5"
+    "react-native-webview": "13.12.5",
+    "expo-notifications": "~0.29.13"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
