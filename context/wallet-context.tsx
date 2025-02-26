@@ -23,7 +23,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setHasWallet(!!mnemonic)
 
       if (!mnemonic) {
-        router.replace("/create-wallet")
+        router.replace("/onboarding")
       }
     } catch (error) {
       console.error("Error checking wallet:", error)

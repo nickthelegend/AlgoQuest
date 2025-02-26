@@ -1,16 +1,15 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated as RNAnimated } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated as RNAnimated, Image } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import MapView, { Marker, Circle, PROVIDER_GOOGLE } from "react-native-maps"
 import { Navigation, Trophy, Clock, MapPin, ChevronUp, ChevronDown, ArrowLeft } from "lucide-react-native"
 import * as Location from "expo-location"
 import { getDistance } from "geolib"
 import { LinearGradient } from "expo-linear-gradient"
-import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated"
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated"
 import { router } from "expo-router"
-import { Image } from 'expo-image';
 
 const { width, height } = Dimensions.get("window")
 const LIBRARY_LOCATION = {
@@ -132,10 +131,9 @@ const MAP_STYLE = [
 export default function QMapScreen() {
   const [location, setLocation] = useState<Location.LocationObject | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null)
   const [isWithinGeofence, setIsWithinGeofence] = useState(false)
   const [distance, setDistance] = useState<number | null>(null)
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(true) // Set to true by default
   const [isOptedIn, setIsOptedIn] = useState(false)
   const mapRef = useRef<MapView>(null)
 
@@ -148,8 +146,8 @@ export default function QMapScreen() {
   })
 
   // Animation values
-  const bottomSheetHeight = useSharedValue(120)
-  const expandIconRotation = useSharedValue(0)
+  const bottomSheetHeight = useSharedValue(350) // Start expanded
+  const expandIconRotation = useSharedValue(180) // Start with down arrow
   const pulseAnim = useRef(new RNAnimated.Value(1)).current
 
   useEffect(() => {
@@ -257,54 +255,25 @@ export default function QMapScreen() {
     }
   })
 
-  const renderQuestModal = () => {
-    if (!selectedQuest) return null
-
-    return (
-      <Animated.View entering={FadeIn} style={styles.modalContainer}>
-        <View style={styles.modalContent}>
-          <LinearGradient colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]} style={StyleSheet.absoluteFill} />
-          <View style={styles.modalHeader}>
-            <View
-              style={[
-                styles.statusBadge,
-                {
-                  backgroundColor: `${getStatusColor(selectedQuest.status)}20`,
-                  borderColor: getStatusColor(selectedQuest.status),
-                },
-              ]}
-            >
-              <Text style={[styles.statusText, { color: getStatusColor(selectedQuest.status) }]}>
-                {selectedQuest.status.charAt(0).toUpperCase() + selectedQuest.status.slice(1)}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedQuest(null)}>
-              <Text style={styles.closeButtonText}>×</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.modalTitle}>{selectedQuest.title}</Text>
-          <Text style={styles.modalDescription}>{selectedQuest.description}</Text>
-
-          <View style={styles.rewardContainer}>
-            <Trophy size={20} color="#7C3AED" />
-            <Text style={styles.rewardText}>{selectedQuest.reward}</Text>
-          </View>
-
-          {isWithinGeofence && selectedQuest.status === "ongoing" && (
-            <TouchableOpacity style={styles.claimButton}>
-              <Text style={styles.claimButtonText}>Claim Reward</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </Animated.View>
-    )
-  }
-
   const formatDistance = (meters: number | null) => {
     if (meters === null) return "Calculating..."
     if (meters < 1000) return `${meters.toFixed(0)} m`
     return `${(meters / 1000).toFixed(1)} km`
+  }
+
+  const focusOnQuest = () => {
+    // Expand the bottom sheet if it's not already expanded
+    if (!isExpanded) {
+      toggleExpand()
+    }
+
+    // Animate to the quest location
+    mapRef.current?.animateToRegion({
+      latitude: LIBRARY_LOCATION.latitude,
+      longitude: LIBRARY_LOCATION.longitude,
+      latitudeDelta: 0.005,
+      longitudeDelta: 0.005,
+    })
   }
 
   return (
@@ -329,26 +298,17 @@ export default function QMapScreen() {
 
         {/* Quest Marker */}
         <Marker
-          coordinate={DUMMY_QUEST.location}
-          onPress={() => setSelectedQuest(DUMMY_QUEST)}
-          tracksViewChanges={false}
-        >
-          <View
-            // style={[
-            //   styles.markerContainer,
-            //   {
-            //     backgroundColor: `${getStatusColor(DUMMY_QUEST.status)}20`,
-            //     borderColor: getStatusColor(DUMMY_QUEST.status),
-            //   },
-            // ]}
-          >
-            <Image
-              source="treasure-chest"
-              style={styles.markerImage}
-              // resizeMode="contain"
-            />
-          </View>
-        </Marker>
+  coordinate={DUMMY_QUEST.location}
+  onPress={focusOnQuest}
+  anchor={{ x: 0, y:0 }}
+  style={{ alignItems: "center" }}
+>
+  <Image
+    source={require("../assets/icons/treasure_chest.png")}
+    style={{ width: 20, height: 20 }}
+    resizeMode="contain"
+  />
+</Marker>
       </MapView>
 
       <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -385,9 +345,6 @@ export default function QMapScreen() {
           </View>
         </TouchableOpacity>
       )}
-
-      {/* Quest Modal */}
-      {renderQuestModal()}
 
       {/* Bottom Quest Info Box */}
       <Animated.View style={[styles.bottomSheet, animatedBottomSheetStyle]}>

@@ -15,5 +15,5 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 * [X] fix the header showing in other screens
 * [ ] Make it in Web2 Then we implement in Web3
 * [X] Sew the header .tsx is visible in the create-wallet and all the stuff i want it to be shown only in the page with the tab view ,, 
-* [ ]  i dont like the uint i like uuid , then it will look cool, streaks also i want toimplement, if user sends the request the other user must catch it, if he catches it then its like streak, bond
+* [X]  i dont like the uint i like uuid , then it will look cool, streaks also i want toimplement, if user sends the request the other user must catch it, if he catches it then its like streak, bond
 * [ ]  Interests, Create 2D NFT avatar, male or female, customize the avatar, limit the request 5 requests
