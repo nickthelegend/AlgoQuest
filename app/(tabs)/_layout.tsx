@@ -2,7 +2,7 @@
 
 import { Tabs } from "expo-router"
 import { StyleSheet, View } from "react-native"
-import { Home, Map, Users, Wallet, User } from "lucide-react-native"
+import { Home, Map, Users, Wallet, User,Swords } from "lucide-react-native"
 import { BlurView } from "expo-blur"
 import Animated, { useAnimatedStyle, withSpring } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -119,10 +119,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="battle-beasts"
         options={{
-          title: "Profile",
-          tabBarIcon: ({ color, focused }) => <TabBarIcon icon={User} color={color} size={28} focused={focused} />,
+          title: "Battle",
+          tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Swords} color={color} size={28} focused={focused} />,
         }}
       />
     </Tabs>
