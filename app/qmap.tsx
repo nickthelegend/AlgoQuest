@@ -9,6 +9,7 @@ import {
   Dimensions,
   Animated as RNAnimated,
   ActivityIndicator,
+  Alert,
   Image
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
@@ -20,13 +21,16 @@ import { LinearGradient } from "expo-linear-gradient"
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated"
 import { router, useLocalSearchParams } from "expo-router"
 import { supabase } from "@/lib/supabase"
+// Add import at the top
+import { isMockingLocation, MockLocationDetectorErrorCode } from "react-native-turbo-mock-location-detector"
 import treasureChest from "@/assets/icons/treasure_chest.png";
 
 const { width, height } = Dimensions.get("window")
-const LIBRARY_LOCATION = {
-  latitude: 17.495557881038195,
-  longitude: 78.39155812153787,
-}
+// Remove this constant as it's no longer needed
+// const LIBRARY_LOCATION = {
+//   latitude: 17.490179,
+//   longitude: 78.389298,
+// }
 
 const GEOFENCE_RADIUS = 50 // 50 meters radius
 
@@ -64,8 +68,8 @@ const DUMMY_QUEST: Quest = {
     },
   },
   quest_status: "ongoing",
-  latitude: LIBRARY_LOCATION.latitude,
-  longitude: LIBRARY_LOCATION.longitude,
+  latitude: 17.490179,
+  longitude: 78.389298,
   expiry_date: "2024-12-31T23:59:59+00:00",
   timeRemaining: "2 hours left",
 }
@@ -165,6 +169,8 @@ export default function QMapScreen() {
   const [isExpanded, setIsExpanded] = useState(true)
   const [isOptedIn, setIsOptedIn] = useState(false)
   const mapRef = useRef<MapView>(null)
+  // Add state for mock location
+  const [isMockLocation, setIsMockLocation] = useState(false)
 
   // Default region
   const [region, setRegion] = useState({
@@ -227,47 +233,98 @@ export default function QMapScreen() {
     ).start()
   }
 
+  // Update location watching configuration for more frequent updates
   const setupLocation = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync()
-    if (status !== "granted") {
-      setErrorMsg("Permission to access location was denied")
-      return
+    try {
+      // Check for mock location first
+      const { isLocationMocked } = await isMockingLocation()
+      setIsMockLocation(isLocationMocked)
+      if (isLocationMocked) {
+        setErrorMsg("Mock location detected. Please disable mock location to participate in quests.")
+        return
+      }
+
+      const { status } = await Location.requestForegroundPermissionsAsync()
+      if (status !== "granted") {
+        setErrorMsg("Permission to access location was denied")
+        return
+      }
+
+      // Get initial location with high accuracy
+      const initialLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.BestForNavigation,
+      })
+      setLocation(initialLocation)
+
+      // Watch location with more frequent updates and higher accuracy
+      const locationSubscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 500, // Update every 500ms
+          distanceInterval: 0.5, // Update every 0.5 meters
+        },
+        (newLocation) => {
+          setLocation(newLocation)
+        },
+      )
+
+      // Clean up subscription when component unmounts
+      return () => {
+        locationSubscription.remove()
+      }
+    } catch (error: any) {
+      // Error handling remains the same
+      if (error?.code) {
+        switch (error.code) {
+          case MockLocationDetectorErrorCode.GPSNotEnabled:
+            setErrorMsg("Please enable GPS to participate in quests")
+            break
+          case MockLocationDetectorErrorCode.NoLocationPermissionEnabled:
+            setErrorMsg("Location permission required to participate in quests")
+            break
+          case MockLocationDetectorErrorCode.CantDetermine:
+            console.warn("Could not determine if location is mocked")
+            break
+          default:
+            console.error("Error setting up location:", error)
+            setErrorMsg("Failed to setup location services")
+        }
+      } else {
+        console.error("Error setting up location:", error)
+        setErrorMsg("Failed to setup location services")
+      }
     }
-
-    const initialLocation = await Location.getCurrentPositionAsync({})
-    setLocation(initialLocation)
-    updateDistance(initialLocation)
-
-    await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.High,
-        timeInterval: 1000,
-        distanceInterval: 1,
-      },
-      (newLocation) => {
-        setLocation(newLocation)
-        updateDistance(newLocation)
-        checkGeofence(newLocation)
-      },
-    )
   }
 
+  // Update the updateDistance and checkGeofence functions to be more accurate and reliable
+  // Update the updateDistance function to ensure we're using the correct quest location
   const updateDistance = (userLocation: Location.LocationObject) => {
     if (!quest) return
 
-    const dist = getDistance(
+    // Use quest location from the database instead of LIBRARY_LOCATION
+    const questLocation = {
+      latitude: quest.latitude,
+      longitude: quest.longitude,
+    }
+
+    const prevDistance = distance
+    const newDistance = getDistance(
       {
         latitude: userLocation.coords.latitude,
         longitude: userLocation.coords.longitude,
       },
-      {
-        latitude: quest.latitude,
-        longitude: quest.longitude,
-      },
+      questLocation,
     )
-    setDistance(dist)
+
+    setDistance(newDistance)
+
+    // Update geofence status whenever distance is updated
+    const withinGeofence = newDistance <= GEOFENCE_RADIUS
+    setIsWithinGeofence(withinGeofence)
   }
 
+  // Remove separate checkGeofence function since it's redundant
+  // Remove separate checkGeofence function since it's now handled in updateDistance
   const checkGeofence = (userLocation: Location.LocationObject) => {
     if (!quest) return
 
@@ -348,7 +405,10 @@ export default function QMapScreen() {
     }
   }
 
+  // Update the focusOnQuest function to use quest location
   const focusOnQuest = () => {
+    if (!quest) return
+
     // Expand the bottom sheet if it's not already expanded
     if (!isExpanded) {
       toggleExpand()
@@ -356,11 +416,11 @@ export default function QMapScreen() {
 
     // Animate to the quest location with respect to zoom limits
     mapRef.current?.animateToRegion({
-                        latitude: quest.latitude,
-                        longitude: quest.longitude,
-                        latitudeDelta: 0.005,
-                        longitudeDelta: 0.005,
-                      })
+      latitude: quest.latitude,
+      longitude: quest.longitude,
+      latitudeDelta: Math.min(0.005, maxLatitudeDelta),
+      longitudeDelta: Math.min(0.005, maxLongitudeDelta),
+    })
   }
 
   if (!quest) {
@@ -378,7 +438,6 @@ export default function QMapScreen() {
     <SafeAreaView style={styles.container}>
       <MapView
         ref={mapRef}
-        
         style={styles.map}
         initialRegion={region}
         showsUserLocation
@@ -438,33 +497,34 @@ export default function QMapScreen() {
         }}
       >
         {/* Geofence Circle */}
+        {/* Update the MapView Circle component to use quest location */}
         <Circle
           center={{
             latitude: quest.latitude,
             longitude: quest.longitude,
           }}
-          radius={20}
+          radius={GEOFENCE_RADIUS}
           fillColor="rgba(124, 58, 237, 0.2)"
           strokeColor="rgba(124, 58, 237, 0.5)"
           strokeWidth={2}
         />
 
         {/* Quest Marker */}
+        {/* Update the Marker component to use quest location */}
         <Marker
-  coordinate={{
-    latitude: quest.latitude,
-    longitude: quest.longitude,
-  }}
+          coordinate={{
+            latitude: quest.latitude,
+            longitude: quest.longitude,
+          }}
   onPress={focusOnQuest}
   anchor={{ x: 0, y: 0 }} // Center the marker
->
-  <Image
+        >
+          <Image
     source={treasureChest}
     style={{ width: 20, height: 20 }}
     resizeMode="contain"
   />
-</Marker>
-        
+        </Marker>
       </MapView>
 
       <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -562,7 +622,139 @@ export default function QMapScreen() {
                   </TouchableOpacity>
                 )}
 
-                {isWithinGeofence ? (
+                {/* Modify the claim reward button press handler */}
+                <TouchableOpacity
+                  style={[styles.actionButton, isOptedIn ? styles.fullWidthButton : {}]}
+                  onPress={async () => {
+                    try {
+                      if (!location || !quest) {
+                        Alert.alert(
+                          "Location Error",
+                          "Unable to determine your location. Please ensure location services are enabled.",
+                          [
+                            {
+                              text: "OK",
+                              style: "cancel",
+                            },
+                          ],
+                          {
+                            cancelable: true,
+                          },
+                        )
+                        return
+                      }
+
+                      // Check mock location first
+                      const { isLocationMocked } = await isMockingLocation()
+                      if (isLocationMocked) {
+                        Alert.alert(
+                          "⚠️ Mock Location Detected",
+                          "Please disable mock location services to participate in quests.",
+                          [
+                            {
+                              text: "OK",
+                              style: "cancel",
+                            },
+                          ],
+                          {
+                            cancelable: true,
+                          },
+                        )
+                        return
+                      }
+
+                      // Calculate distance on demand
+                      const currentDistance = getDistance(
+                        {
+                          latitude: location.coords.latitude,
+                          longitude: location.coords.longitude,
+                        },
+                        {
+                          latitude: quest.latitude,
+                          longitude: quest.longitude,
+                        },
+                      )
+
+                      // Update state variables
+                      setDistance(currentDistance)
+                      const withinGeofence = currentDistance <= GEOFENCE_RADIUS
+                      setIsWithinGeofence(withinGeofence)
+
+                      if (withinGeofence) {
+                        Alert.alert(
+                          "🎉 Quest Complete!",
+                          `Congratulations! You've earned:\n\n• ${quest.rewards.tokens} $CAMP tokens${quest.rewards.nft ? `\n• ${quest.rewards.nft.name}` : ""}`,
+                          [
+                            {
+                              text: "Claim Rewards",
+                              style: "default",
+                              onPress: () => {
+                                // Here you would typically call your API to process the reward
+                                Alert.alert(
+                                  "💫 Success",
+                                  "Your rewards have been credited to your wallet!",
+                                  [{ text: "OK" }],
+                                  {
+                                    cancelable: false,
+                                  },
+                                )
+                              },
+                            },
+                            {
+                              text: "Cancel",
+                              style: "cancel",
+                            },
+                          ],
+                          {
+                            cancelable: true,
+                          },
+                        )
+                      } else {
+                        Alert.alert(
+                          "📍 Too Far",
+                          `Get closer to the quest location!\n\nYou're ${currentDistance.toFixed(0)}m away.\nNeed to be within ${GEOFENCE_RADIUS}m to claim.`,
+                          [
+                            {
+                              text: "Navigate",
+                              onPress: () => {
+                                mapRef.current?.animateToRegion({
+                                  latitude: quest.latitude,
+                                  longitude: quest.longitude,
+                                  latitudeDelta: 0.005,
+                                  longitudeDelta: 0.005,
+                                })
+                              },
+                            },
+                            {
+                              text: "OK",
+                              style: "cancel",
+                            },
+                          ],
+                          {
+                            cancelable: true,
+                          },
+                        )
+                      }
+                    } catch (error) {
+                      Alert.alert(
+                        "❌ Error",
+                        "Failed to verify location. Please try again.",
+                        [
+                          {
+                            text: "OK",
+                            style: "cancel",
+                          },
+                        ],
+                        {
+                          cancelable: true,
+                        },
+                      )
+                    }
+                  }}
+                >
+                  <Text style={styles.actionButtonText}>Claim Reward</Text>
+                </TouchableOpacity>
+                {/* {isWithinGeofence ? (
                   <TouchableOpacity style={[styles.actionButton, isOptedIn ? styles.fullWidthButton : {}]}>
                     <Text style={styles.actionButtonText}>Claim Reward</Text>
                   </TouchableOpacity>
@@ -573,14 +765,14 @@ export default function QMapScreen() {
                       mapRef.current?.animateToRegion({
                         latitude: quest.latitude,
                         longitude: quest.longitude,
-                        latitudeDelta: 0.003,
-                        longitudeDelta: 0.003,
+                        latitudeDelta: 0.005,
+                        longitudeDelta: 0.005,
                       })
                     }}
                   >
                     <Text style={styles.actionButtonText}>Navigate to Quest</Text>
                   </TouchableOpacity>
-                )}
+                )} */}
               </View>
             </View>
           )}
