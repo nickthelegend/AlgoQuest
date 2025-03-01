@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase"
 import * as SecureStore from "expo-secure-store"
 
 interface Friend {
-  id: number
+  id: string
   full_name: string
   roll_number: string
   branch: string
@@ -47,8 +47,7 @@ export default function FriendsScreen() {
       console.error("Error loading current user:", error)
     }
   }
-
-  const fetchFriends = async (userId: number) => {
+  const fetchFriends = async (userId: string) => {
     try {
       setLoading(true)
 
@@ -70,12 +69,12 @@ export default function FriendsScreen() {
 
       if (friendsData && friendsData.length > 0) {
         // Transform the data to match our Friend interface
-        const formattedFriends: Friend[] = friendsData.map((item) => ({
+        const formattedFriends: Friend[] = friendsData.map((item: any) => ({
           id: item.friend.id,
           full_name: item.friend.full_name,
           roll_number: item.friend.roll_number,
           branch: item.friend.branch,
-          streak_days: Math.floor(Math.random() * 10) + 1, // For demo purpose only
+          streak_days: Math.floor(Math.random() * 10) + 1,
           avatar_url: null,
         }))
 
@@ -97,7 +96,7 @@ export default function FriendsScreen() {
         // If no friends exist, fallback to mock data for demo
         const mockFriends: Friend[] = [
           {
-            id: 1,
+            id: "1", // Changed to string UUID
             full_name: "Alex Johnson",
             roll_number: "CS21B001",
             branch: "Computer Science",
@@ -106,7 +105,7 @@ export default function FriendsScreen() {
               "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
           },
           {
-            id: 2,
+            id: "2", // Changed to string UUID
             full_name: "Sarah Kim",
             roll_number: "CS21B045",
             branch: "Computer Science",
@@ -115,7 +114,7 @@ export default function FriendsScreen() {
               "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7B2B6DD035-1075-4F47-B2F1-DABE23BB2ECB%7D-45Wli9AJqOF6pzxNlZ6Axi54cw1bDu.png",
           },
           {
-            id: 3,
+            id: "3", // Changed to string UUID
             full_name: "Mike Chen",
             roll_number: "EE21B032",
             branch: "Electrical Engineering",

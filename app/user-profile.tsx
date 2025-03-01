@@ -11,7 +11,7 @@ import * as SecureStore from "expo-secure-store"
 import * as Clipboard from "expo-clipboard"
 
 interface UserProfile {
-  id: number
+  id: string
   full_name: string
   roll_number: string
   branch: string
@@ -23,7 +23,7 @@ export default function UserProfileScreen() {
   const { userId } = useLocalSearchParams()
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null) // Changed from number to string
   const [isFriend, setIsFriend] = useState(false)
   const [requestSent, setRequestSent] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -31,7 +31,7 @@ export default function UserProfileScreen() {
   useEffect(() => {
     if (userId) {
       loadCurrentUser()
-      fetchUserProfile(Number(userId))
+      fetchUserProfile(userId as string) // Removed Number() conversion
     }
   }, [userId])
 
@@ -45,13 +45,13 @@ export default function UserProfileScreen() {
       if (error) throw error
 
       setCurrentUserId(data.id)
-      checkFriendshipStatus(data.id, Number(userId))
+      checkFriendshipStatus(data.id, userId as string) // Updated to use string
     } catch (error) {
       console.error("Error loading current user:", error)
     }
   }
 
-  const fetchUserProfile = async (id: number) => {
+  const fetchUserProfile = async (id: string) => { // Changed from number to string
     try {
       setLoading(true)
       const { data, error } = await supabase.from("users").select("*").eq("id", id).single()
@@ -67,7 +67,7 @@ export default function UserProfileScreen() {
     }
   }
 
-  const checkFriendshipStatus = async (currentId: number, targetId: number) => {
+  const checkFriendshipStatus = async (currentId: string, targetId: string) => { // Changed from number to string
     try {
       // Check if they are friends
       const { data: friendData, error: friendError } = await supabase

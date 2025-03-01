@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase"
 import * as SecureStore from "expo-secure-store"
 
 interface FriendRequest {
-  id: number
+  id: string
   sender_id: number
   receiver_id: number
   status: string
@@ -50,7 +50,7 @@ export default function NotificationsScreen() {
     }
   }
 
-  const fetchFriendRequests = async (userId: number) => {
+  const fetchFriendRequests = async (userId: string) => {
     try {
       setLoading(true)
       const { data, error } = await supabase
@@ -78,7 +78,7 @@ export default function NotificationsScreen() {
     }
   }
 
-  const handleAcceptRequest = async (requestId: number, senderId: number) => {
+  const handleAcceptRequest = async (requestId: string, senderId: string) => {
     if (!currentUserId) return
 
     try {
@@ -115,7 +115,7 @@ export default function NotificationsScreen() {
     }
   }
 
-  const handleRejectRequest = async (requestId: number) => {
+  const handleRejectRequest = async (requestId: string) => {
     try {
       const { error } = await supabase.from("friend_requests").delete().eq("id", requestId)
 
@@ -131,7 +131,7 @@ export default function NotificationsScreen() {
     }
   }
 
-  const viewUserProfile = (userId: number) => {
+  const viewUserProfile = (userId: string) => {
     router.push({
       pathname: "/user-profile",
       params: { userId },
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    paddingTop: 60,
+    paddingTop: 20,
   },
   backButton: {
     width: 40,

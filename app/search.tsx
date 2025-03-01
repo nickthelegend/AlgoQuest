@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase"
 import * as SecureStore from "expo-secure-store"
 
 interface UserProfile {
-  id: number
+  id: string
   full_name: string
   roll_number: string
   branch: string
@@ -23,7 +23,7 @@ export default function SearchScreen() {
   const [users, setUsers] = useState<UserProfile[]>([])
   const [loading, setLoading] = useState(false)
   const [currentUserWallet, setCurrentUserWallet] = useState<string | null>(null)
-  const [sentRequests, setSentRequests] = useState<Record<number, boolean>>({})
+  const [sentRequests, setSentRequests] = useState<Record<string, boolean>>({}) // Changed to string key
 
   useEffect(() => {
     loadCurrentUser()
@@ -75,7 +75,7 @@ export default function SearchScreen() {
         if (requestsError) throw requestsError
 
         // Create a map of sent requests
-        const requestMap: Record<number, boolean> = {}
+        const requestMap: Record<string, boolean> = {} // Changed to string key
         if (requestsData) {
           requestsData.forEach((request) => {
             requestMap[request.receiver_id] = true
@@ -94,7 +94,7 @@ export default function SearchScreen() {
     }
   }
 
-  const sendFriendRequest = async (receiverId: number) => {
+  const sendFriendRequest = async (receiverId: string) => { // Changed to string parameter
     try {
       if (!currentUserWallet) {
         Alert.alert("Error", "You need to be logged in to send friend requests")
@@ -132,7 +132,7 @@ export default function SearchScreen() {
     }
   }
 
-  const viewUserProfile = (userId: number) => {
+  const viewUserProfile = (userId: string) => { // Changed to string parameter
     router.push({
       pathname: "/user-profile",
       params: { userId },
@@ -174,7 +174,7 @@ export default function SearchScreen() {
       ) : (
         <FlatList
           data={users}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item) => item.id} // Removed toString() since id is already string
           renderItem={({ item }) => (
             <View style={styles.userCard}>
               <LinearGradient colors={["#1F1F1F", "#0F0F0F"]} style={StyleSheet.absoluteFill} />
