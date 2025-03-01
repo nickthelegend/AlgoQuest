@@ -15,7 +15,9 @@ export default function BattleBeastsScreen() {
   const navigateToGameInfo = () => {
     router.push("/game-info")
   }
-
+  const navigateToFindPlayers = () => {
+    router.push("/(game)/find-players")
+  }
   const navigateToMarketplace = () => {
     router.push("/(game)/marketplace")
   }
@@ -67,7 +69,7 @@ export default function BattleBeastsScreen() {
         <View style={styles.actionsGrid}>
           {/* Find Players Card */}
           <Animated.View entering={FadeInDown.delay(300)} style={styles.actionCard}>
-            <TouchableOpacity style={styles.actionCardContent}>
+            <TouchableOpacity style={styles.actionCardContent} onPress={navigateToFindPlayers}>
               <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
                 <LinearGradient
                   colors={["rgba(239, 68, 68, 0.2)", "rgba(0, 0, 0, 0)"]}

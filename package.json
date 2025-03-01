@@ -37,6 +37,7 @@
     "expo-nearby-connections": "^1.0.0",
     "expo-notifications": "~0.29.13",
     "expo-router": "~4.0.17",
+    "expo-screen-orientation": "^8.0.4",
     "expo-secure-store": "~14.0.1",
     "expo-splash-screen": "~0.29.21",
     "expo-status-bar": "~2.0.1",
@@ -60,7 +61,8 @@
     "react-native-turbo-mock-location-detector": "^2.3.1",
     "react-native-url-polyfill": "^2.0.0",
     "react-native-web": "~0.19.13",
-    "react-native-webview": "13.12.5"
+    "react-native-webview": "13.12.5",
+    "expo-navigation-bar": "~4.0.8"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
