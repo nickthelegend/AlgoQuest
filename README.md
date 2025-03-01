@@ -7,8 +7,8 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 * [X] Add the Quest Tokens, Index the Assets and show the number of NFTs.
 * [X] Cron Jobs on Quest Creator, Smart contract
 * [X] Implement the Maps API, with Geo Fencing,
-* [ ] Quest Creation, Token Collection nearby radius 10m,
-* [ ] Implement anti cheat methods
+* [X] Quest Creation, Token Collection nearby radius 10m,
+* [X] Implement anti cheat methods
 * [ ] Limit The Speed of Moving object to be ideal with the person who is walkin, clears the people with the veichles having chance to win
 * [ ] Leaderboard
 * [X] friends, friend requests sending and reciving, notfications of friend request recieved and other stuff

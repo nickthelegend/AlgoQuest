@@ -5,16 +5,12 @@ import { View, Text, ScrollView, Image, StyleSheet, TouchableOpacity, TextInput,
 import { SafeAreaView } from "react-native-safe-area-context"
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated"
 import { BlurView } from "expo-blur"
-import { Search, Users, UserPlus, MessageCircle, Wifi, WifiOff } from "lucide-react-native"
+import { Search, Users, UserPlus, MessageCircle, Wifi, WifiOff, Shield, Star, MapPin, Clock } from "lucide-react-native"
 import * as SecureStore from "expo-secure-store"
 import algosdk from "algosdk"
 import * as NearbyConnections from "expo-nearby-connections"
-import {
-  PERMISSIONS,
-  RESULTS,
-  checkMultiple,
-  requestMultiple,
-} from "react-native-permissions"
+import { LinearGradient } from "expo-linear-gradient"
+import { PERMISSIONS, RESULTS, checkMultiple, requestMultiple } from "react-native-permissions"
 
 interface NearbyUser {
   peerId: string
@@ -22,6 +18,11 @@ interface NearbyUser {
   university?: string
   distance?: string
   connected?: boolean
+  // Added fields for enhanced UI
+  role?: string
+  reputation?: number
+  lastSeen?: string
+  status?: "online" | "away" | "offline"
 }
 
 async function checkAndRequestPermissions(): Promise<boolean> {
@@ -84,7 +85,7 @@ export default function ConnectScreen() {
         handleStopAdvertising()
       }
     }
-  }, [])
+  }, [advertising])
 
   useEffect(() => {
     if (!permissionsGranted) return
@@ -99,8 +100,12 @@ export default function ConnectScreen() {
           {
             peerId: data.peerId,
             name: data.name,
-            university: "Nearby User",
+            university: "Stanford University",
             distance: "Just found",
+            role: "Student",
+            reputation: Math.floor(Math.random() * 5) + 1,
+            lastSeen: "Just now",
+            status: "online",
           },
         ]
       })
@@ -113,40 +118,28 @@ export default function ConnectScreen() {
 
     // Listen for connection requests
     const onInvitationListener = NearbyConnections.onInvitationReceived((data) => {
-      Alert.alert(
-        "Connection Request",
-        `${data.name} wants to connect with you`,
-        [
-          {
-            text: "Accept",
-            onPress: () => handleAcceptConnection(data.peerId),
-          },
-          {
-            text: "Reject",
-            onPress: () => handleRejectConnection(data.peerId),
-            style: "cancel",
-          },
-        ],
-      )
+      Alert.alert("Connection Request", `${data.name} wants to connect with you`, [
+        {
+          text: "Accept",
+          onPress: () => handleAcceptConnection(data.peerId),
+        },
+        {
+          text: "Reject",
+          onPress: () => handleRejectConnection(data.peerId),
+          style: "cancel",
+        },
+      ])
     })
 
     // Listen for connection state changes
     const onConnectedListener = NearbyConnections.onConnected((data) => {
       console.log("Connected to:", data)
-      setNearbyUsers((prev) =>
-        prev.map((user) =>
-          user.peerId === data.peerId ? { ...user, connected: true } : user,
-        ),
-      )
+      setNearbyUsers((prev) => prev.map((user) => (user.peerId === data.peerId ? { ...user, connected: true } : user)))
     })
 
     const onDisconnectedListener = NearbyConnections.onDisconnected((data) => {
       console.log("Disconnected from:", data)
-      setNearbyUsers((prev) =>
-        prev.map((user) =>
-          user.peerId === data.peerId ? { ...user, connected: false } : user,
-        ),
-      )
+      setNearbyUsers((prev) => prev.map((user) => (user.peerId === data.peerId ? { ...user, connected: false } : user)))
     })
 
     return () => {
@@ -204,7 +197,7 @@ export default function ConnectScreen() {
           // Start discovery after successful advertising
           const discoveryPeerId = await NearbyConnections.startDiscovery(walletAddress)
           console.log("Started discovery with peerId:", discoveryPeerId)
-          
+
           setAdvertising(true)
         } catch (error) {
           console.error("Error in delayed start:", error)
@@ -265,9 +258,20 @@ export default function ConnectScreen() {
     }
   }
 
-  const filteredUsers = nearbyUsers.filter((user) =>
-    user.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  const filteredUsers = nearbyUsers.filter((user) => user.name.toLowerCase().includes(searchQuery.toLowerCase()))
+
+  const getStatusColor = (status: NearbyUser["status"]) => {
+    switch (status) {
+      case "online":
+        return "#4ADE80"
+      case "away":
+        return "#F59E0B"
+      case "offline":
+        return "#94A3B8"
+      default:
+        return "#94A3B8"
+    }
+  }
 
   if (!permissionsGranted) {
     return (
@@ -302,9 +306,7 @@ export default function ConnectScreen() {
             onPress={advertising ? handleStopAdvertising : handleStartAdvertising}
           >
             {advertising ? <WifiOff size={20} color="#ffffff" /> : <Wifi size={20} color="#ffffff" />}
-            <Text style={styles.advertiseButtonText}>
-              {advertising ? "Stop Advertising" : "Start Advertising"}
-            </Text>
+            <Text style={styles.advertiseButtonText}>{advertising ? "Stop Advertising" : "Start Advertising"}</Text>
           </TouchableOpacity>
         </Animated.View>
 
@@ -327,49 +329,90 @@ export default function ConnectScreen() {
           <View style={styles.sectionHeader}>
             <Users size={20} color="#ffffff" />
             <Text style={styles.sectionTitle}>Nearby Students</Text>
+            {filteredUsers.length > 0 && (
+              <View style={styles.userCount}>
+                <Text style={styles.userCountText}>{filteredUsers.length}</Text>
+              </View>
+            )}
           </View>
           <View style={styles.usersList}>
             {filteredUsers.length > 0 ? (
               filteredUsers.map((user, index) => (
                 <Animated.View key={user.peerId} entering={FadeIn.delay(400 + index * 200)}>
                   <BlurView intensity={40} tint="dark" style={styles.userCard}>
-                    <Image
-                      source={{
-                        uri: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
-                      }}
-                      style={styles.userAvatar}
+                    <LinearGradient
+                      colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]}
+                      style={StyleSheet.absoluteFill}
                     />
-                    <View style={styles.userInfo}>
-                      <Text style={styles.userName}>{user.name}</Text>
-                      <Text style={styles.userUniversity}>{user.university}</Text>
-                      <Text style={styles.userDistance}>{user.distance}</Text>
-                    </View>
-                    <View style={styles.userActions}>
-                      <TouchableOpacity
-                        style={[styles.actionButton, user.connected && styles.actionButtonConnected]}
-                        onPress={() =>
-                          user.connected
-                            ? handleDisconnect(user.peerId)
-                            : handleRequestConnection(user.peerId)
-                        }
-                      >
-                        <UserPlus size={20} color="#ffffff" />
-                      </TouchableOpacity>
-                      {user.connected && (
-                        <TouchableOpacity style={styles.actionButton}>
-                          <MessageCircle size={20} color="#ffffff" />
+                    <View style={styles.userCardContent}>
+                      {/* User Avatar and Status */}
+                      <View style={styles.avatarContainer}>
+                        <Image
+                          source={{
+                            uri: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
+                          }}
+                          style={styles.userAvatar}
+                        />
+                        <View style={[styles.statusIndicator, { backgroundColor: getStatusColor(user.status) }]} />
+                      </View>
+
+                      {/* User Info */}
+                      <View style={styles.userInfo}>
+                        <View style={styles.nameContainer}>
+                          <Text style={styles.userName}>{user.name}</Text>
+                          <View style={styles.reputationContainer}>
+                            <Shield size={12} color="#7C3AED" />
+                            <Text style={styles.reputationText}>{user.reputation} / 5</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.userMetaInfo}>
+                          <View style={styles.metaItem}>
+                            <MapPin size={12} color="rgba(255, 255, 255, 0.6)" />
+                            <Text style={styles.metaText}>{user.university}</Text>
+                          </View>
+                          <View style={styles.metaItem}>
+                            <Clock size={12} color="rgba(255, 255, 255, 0.6)" />
+                            <Text style={styles.metaText}>{user.lastSeen}</Text>
+                          </View>
+                        </View>
+
+                        {/* Role Badge */}
+                        <View style={styles.roleBadge}>
+                          <Star size={12} color="#F59E0B" />
+                          <Text style={styles.roleText}>{user.role}</Text>
+                        </View>
+                      </View>
+
+                      {/* Action Buttons */}
+                      <View style={styles.userActions}>
+                        <TouchableOpacity
+                          style={[styles.actionButton, user.connected && styles.actionButtonConnected]}
+                          onPress={() =>
+                            user.connected ? handleDisconnect(user.peerId) : handleRequestConnection(user.peerId)
+                          }
+                        >
+                          <UserPlus size={20} color="#ffffff" />
                         </TouchableOpacity>
-                      )}
+                        {user.connected && (
+                          <TouchableOpacity style={styles.actionButton}>
+                            <MessageCircle size={20} color="#ffffff" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
                   </BlurView>
                 </Animated.View>
               ))
             ) : (
               <BlurView intensity={40} tint="dark" style={styles.emptyState}>
+                <LinearGradient
+                  colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Users size={32} color="rgba(255, 255, 255, 0.3)" />
                 <Text style={styles.emptyStateText}>
-                  {advertising
-                    ? "Searching for nearby students..."
-                    : "Start advertising to discover nearby students"}
+                  {advertising ? "Searching for nearby students..." : "Start advertising to discover nearby students"}
                 </Text>
               </BlurView>
             )}
@@ -387,7 +430,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingTop: 60,
+    paddingTop: 20,
   },
   header: {
     flexDirection: "row",
@@ -448,60 +491,130 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 20,
     fontWeight: "bold",
+    marginRight: 8,
+  },
+  userCount: {
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  userCountText: {
+    color: "#7C3AED",
+    fontSize: 12,
+    fontWeight: "600",
   },
   usersList: {
     gap: 12,
   },
   userCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
   },
+  userCardContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    gap: 12,
+  },
+  avatarContainer: {
+    position: "relative",
+  },
   userAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: "#7C3AED",
+  },
+  statusIndicator: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: "#000000",
   },
   userInfo: {
     flex: 1,
-    marginLeft: 12,
+    gap: 4,
+  },
+  nameContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   userName: {
     color: "#ffffff",
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "600",
   },
-  userUniversity: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 14,
+  reputationContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
-  userDistance: {
+  reputationText: {
+    color: "#7C3AED",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  userMetaInfo: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  metaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  metaText: {
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 12,
+  },
+  roleBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(245, 158, 11, 0.1)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    alignSelf: "flex-start",
     marginTop: 4,
+  },
+  roleText: {
+    color: "#F59E0B",
+    fontSize: 12,
+    fontWeight: "500",
   },
   userActions: {
     flexDirection: "row",
     gap: 8,
   },
   actionButton: {
-    padding: 8,
+    padding: 10,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 8,
+    borderRadius: 12,
   },
   actionButtonConnected: {
     backgroundColor: "#7C3AED",
   },
   emptyState: {
-    padding: 24,
+    padding: 32,
     borderRadius: 16,
     alignItems: "center",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
+    gap: 16,
   },
   emptyStateText: {
     color: "rgba(255, 255, 255, 0.6)",
@@ -538,3 +651,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 })
+
