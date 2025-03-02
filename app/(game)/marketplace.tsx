@@ -1,53 +1,127 @@
-"use client"
-
-import { useState } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, TextInput } from "react-native"
+import { useState, useEffect } from "react"
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Image,
+  TextInput,
+  Linking,
+  Alert,
+  ActivityIndicator,
+} from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
-import { ArrowLeft, Search, Filter, Shield, Zap, Heart, Sword, Crown, ChevronDown, Tag } from "lucide-react-native"
+import {
+  ArrowLeft,
+  Search,
+  Filter,
+  Shield,
+  Zap,
+  Heart,
+  Sword,
+  Crown,
+  ChevronDown,
+  Tag,
+  ExternalLink,
+} from "lucide-react-native"
 import { router } from "expo-router"
+import { supabase } from "@/lib/supabase"
+import * as SecureStore from "expo-secure-store"
 
-// Mock data for marketplace listings
-const MOCK_LISTINGS = [
-  {
-    id: "1",
-    name: "Thunder Dragon",
-    seller: "Alex.eth",
-    price: "1500",
-    tier: 3,
-    status: "active",
-    image: "https://example.com/beast1.jpg",
+interface Listing {
+  id: string
+  beast_id: string
+  seller_id: string
+  asset_id: string
+  price: number
+  status: "active" | "sold" | "cancelled"
+  created_at: string
+  metadata: {
+    name: string
+    tier: number
     stats: {
-      attack: 85,
-      defense: 70,
-      speed: 90,
-      health: 75,
-    },
-  },
-  {
-    id: "2",
-    name: "Shadow Wolf",
-    seller: "Sarah.eth",
-    price: "800",
-    tier: 2,
-    status: "active",
-    image: "https://example.com/beast2.jpg",
-    stats: {
-      attack: 70,
-      defense: 65,
-      speed: 95,
-      health: 60,
-    },
-  },
-  // Add more mock listings...
-]
+      attack: number
+      defense: number
+      speed: number
+      health: number
+    }
+    image_url: string
+  }
+  seller: {
+    full_name: string
+    wallet_address: string
+  }
+}
 
 export default function MarketplaceScreen() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedTier, setSelectedTier] = useState<number | null>(null)
   const [sortBy, setSortBy] = useState<"price" | "tier" | "recent">("recent")
+  const [listings, setListings] = useState<Listing[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadListings()
+    loadWalletAddress()
+  }, [])
+
+  const loadWalletAddress = async () => {
+    const address = await SecureStore.getItemAsync("walletAddress")
+    setWalletAddress(address)
+  }
+
+  const loadListings = async () => {
+    try {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from("marketplace_listings")
+        .select(`
+          *,
+          seller:seller_id(full_name, wallet_address)
+        `)
+        .eq("status", "active")
+        .order(sortBy === "recent" ? "created_at" : sortBy, { ascending: sortBy === "tier" })
+
+      if (error) throw error
+
+      setListings(data || [])
+    } catch (err) {
+      console.error("Error loading listings:", err)
+      setError("Failed to load marketplace listings")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleBuy = async (listing: Listing) => {
+    if (!walletAddress) {
+      Alert.alert("Error", "Please connect your wallet first")
+      return
+    }
+
+    try {
+      // Implementation for buying NFT will go here
+      // This will involve:
+      // 1. Creating an Algorand transaction
+      // 2. Signing it with the user's wallet
+      // 3. Updating the marketplace listing status
+      // 4. Transferring the NFT
+      Alert.alert("Coming Soon", "NFT purchasing will be implemented soon!")
+    } catch (error) {
+      console.error("Error buying NFT:", error)
+      Alert.alert("Error", "Failed to complete purchase")
+    }
+  }
+
+  const viewOnExplorer = (assetId: string) => {
+    Linking.openURL(`https://testnet.explorer.perawallet.app/asset/${assetId}/`)
+  }
 
   const getTierColor = (tier: number) => {
     switch (tier) {
@@ -65,6 +139,23 @@ export default function MarketplaceScreen() {
       <View style={[styles.statBarFill, { width: `${value}%`, backgroundColor: color }]} />
     </View>
   )
+
+  const filteredListings = listings.filter((listing) => {
+    if (selectedTier && listing.metadata.tier !== selectedTier) return false
+    if (searchQuery && !listing.metadata.name.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    return true
+  })
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#7C3AED" />
+          <Text style={styles.loadingText}>Loading marketplace listings...</Text>
+        </View>
+      </SafeAreaView>
+    )
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -98,21 +189,21 @@ export default function MarketplaceScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsContainer}>
             <TouchableOpacity
               style={[styles.pill, selectedTier === 3 && styles.pillSelected]}
-              onPress={() => setSelectedTier(3)}
+              onPress={() => setSelectedTier(selectedTier === 3 ? null : 3)}
             >
               <Crown size={16} color={selectedTier === 3 ? "#7C3AED" : "#ffffff"} />
               <Text style={[styles.pillText, selectedTier === 3 && styles.pillTextSelected]}>Tier 3</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.pill, selectedTier === 2 && styles.pillSelected]}
-              onPress={() => setSelectedTier(2)}
+              onPress={() => setSelectedTier(selectedTier === 2 ? null : 2)}
             >
               <Shield size={16} color={selectedTier === 2 ? "#3B82F6" : "#ffffff"} />
               <Text style={[styles.pillText, selectedTier === 2 && styles.pillTextSelected]}>Tier 2</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.pill, selectedTier === 1 && styles.pillSelected]}
-              onPress={() => setSelectedTier(1)}
+              onPress={() => setSelectedTier(selectedTier === 1 ? null : 1)}
             >
               <Shield size={16} color={selectedTier === 1 ? "#94A3B8" : "#ffffff"} />
               <Text style={[styles.pillText, selectedTier === 1 && styles.pillTextSelected]}>Tier 1</Text>
@@ -130,63 +221,65 @@ export default function MarketplaceScreen() {
 
         {/* Listings */}
         <View style={styles.listingsGrid}>
-          {MOCK_LISTINGS.map((listing, index) => (
-            <Animated.View key={listing.id} entering={FadeInDown.delay(500 + index * 100)} style={styles.listingCard}>
-              <BlurView intensity={40} tint="dark" style={styles.cardContent}>
-                <LinearGradient
-                  colors={[`${getTierColor(listing.tier)}20`, "rgba(0, 0, 0, 0)"]}
-                  style={StyleSheet.absoluteFill}
-                />
-                <View style={styles.cardHeader}>
-                  <View style={[styles.tierBadge, { backgroundColor: getTierColor(listing.tier) }]}>
-                    <Text style={styles.tierText}>Tier {listing.tier}</Text>
-                  </View>
-                  <TouchableOpacity style={styles.favoriteButton}>
-                    <Heart size={16} color="#ffffff" />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.imageContainer}>
-                  <Image
-                    source={{ uri: "/placeholder.svg?height=200&width=200" }}
-                    style={styles.beastImage}
-                    resizeMode="cover"
+          {filteredListings.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No listings found</Text>
+            </View>
+          ) : (
+            filteredListings.map((listing, index) => (
+              <Animated.View key={listing.id} entering={FadeInDown.delay(500 + index * 100)} style={styles.listingCard}>
+                <BlurView intensity={40} tint="dark" style={styles.cardContent}>
+                  <LinearGradient
+                    colors={[`${getTierColor(listing.metadata.tier)}20`, "rgba(0, 0, 0, 0)"]}
+                    style={StyleSheet.absoluteFill}
                   />
-                </View>
-
-                <Text style={styles.beastName}>{listing.name}</Text>
-                <Text style={styles.sellerName}>{listing.seller}</Text>
-
-                <View style={styles.statsContainer}>
-                  <View style={styles.statRow}>
-                    <Sword size={16} color="#EF4444" />
-                    {renderStatBar(listing.stats.attack, "#EF4444")}
+                  <View style={styles.cardHeader}>
+                    <View style={[styles.tierBadge, { backgroundColor: getTierColor(listing.metadata.tier) }]}>
+                      <Text style={styles.tierText}>Tier {listing.metadata.tier}</Text>
+                    </View>
+                    <TouchableOpacity style={styles.explorerButton} onPress={() => viewOnExplorer(listing.asset_id)}>
+                      <ExternalLink size={16} color="#ffffff" />
+                    </TouchableOpacity>
                   </View>
-                  <View style={styles.statRow}>
-                    <Shield size={16} color="#3B82F6" />
-                    {renderStatBar(listing.stats.defense, "#3B82F6")}
-                  </View>
-                  <View style={styles.statRow}>
-                    <Zap size={16} color="#F59E0B" />
-                    {renderStatBar(listing.stats.speed, "#F59E0B")}
-                  </View>
-                  <View style={styles.statRow}>
-                    <Heart size={16} color="#10B981" />
-                    {renderStatBar(listing.stats.health, "#10B981")}
-                  </View>
-                </View>
 
-                <View style={styles.priceContainer}>
-                  <Tag size={16} color="#7C3AED" />
-                  <Text style={styles.priceText}>{listing.price} $CAMP</Text>
-                </View>
+                  <View style={styles.imageContainer}>
+                    <Image source={{ uri: listing.metadata.image_url }} style={styles.beastImage} resizeMode="cover" />
+                  </View>
 
-                <TouchableOpacity style={styles.buyButton}>
-                  <Text style={styles.buyButtonText}>Buy Now</Text>
-                </TouchableOpacity>
-              </BlurView>
-            </Animated.View>
-          ))}
+                  <Text style={styles.beastName}>{listing.metadata.name}</Text>
+                  <Text style={styles.sellerName}>by {listing.seller.full_name}</Text>
+
+                  <View style={styles.statsContainer}>
+                    <View style={styles.statRow}>
+                      <Sword size={16} color="#EF4444" />
+                      {renderStatBar(listing.metadata.stats.attack, "#EF4444")}
+                    </View>
+                    <View style={styles.statRow}>
+                      <Shield size={16} color="#3B82F6" />
+                      {renderStatBar(listing.metadata.stats.defense, "#3B82F6")}
+                    </View>
+                    <View style={styles.statRow}>
+                      <Zap size={16} color="#F59E0B" />
+                      {renderStatBar(listing.metadata.stats.speed, "#F59E0B")}
+                    </View>
+                    <View style={styles.statRow}>
+                      <Heart size={16} color="#10B981" />
+                      {renderStatBar(listing.metadata.stats.health, "#10B981")}
+                    </View>
+                  </View>
+
+                  <View style={styles.priceContainer}>
+                    <Tag size={16} color="#7C3AED" />
+                    <Text style={styles.priceText}>{listing.price} $CAMP</Text>
+                  </View>
+
+                  <TouchableOpacity style={styles.buyButton} onPress={() => handleBuy(listing)}>
+                    <Text style={styles.buyButtonText}>Buy Now</Text>
+                  </TouchableOpacity>
+                </BlurView>
+              </Animated.View>
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -198,11 +291,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#000000",
   },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingText: {
+    color: "#ffffff",
+    marginTop: 16,
+    fontSize: 16,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    paddingTop: 20,
+    paddingTop: 60,
   },
   backButton: {
     width: 40,
@@ -294,6 +397,14 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 14,
   },
+  emptyContainer: {
+    padding: 24,
+    alignItems: "center",
+  },
+  emptyText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 16,
+  },
   listingsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -326,7 +437,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  favoriteButton: {
+  explorerButton: {
     width: 32,
     height: 32,
     borderRadius: 16,

@@ -1,23 +1,138 @@
 "use client"
 
-import { useState } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert } from "react-native"
+import { useState, useEffect } from "react"
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Image, ActivityIndicator } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
-import { ArrowLeft, Tag, AlertCircle } from "lucide-react-native"
+import { ArrowLeft, Tag, AlertCircle, Shield, Sword, Heart, Zap } from "lucide-react-native"
 import { router, useLocalSearchParams } from "expo-router"
+import { supabase } from "@/lib/supabase"
+import * as SecureStore from "expo-secure-store"
+
+interface Beast {
+  id: string
+  name: string
+  owner_id: string
+  asset_id: string
+  tier: number
+  image_url: string
+  ipfs_url: string
+  allocated_stats: {
+    attack: number
+    defense: number
+    speed: number
+    health: number
+  }
+  metadata: any
+}
 
 export default function SellBeastScreen() {
   const { id } = useLocalSearchParams()
+  const [beast, setBeast] = useState<Beast | null>(null)
   const [price, setPrice] = useState("")
   const [loading, setLoading] = useState(false)
+  const [loadingBeast, setLoadingBeast] = useState(true)
+
+  useEffect(() => {
+    loadBeast()
+  }, [])
+
+  const loadBeast = async () => {
+    try {
+      setLoadingBeast(true)
+      const { data, error } = await supabase.from("beasts").select("*").eq("id", id).single()
+
+      if (error) throw error
+      if (!data) throw new Error("Beast not found")
+
+      setBeast(data)
+    } catch (err) {
+      console.error("Error loading beast:", err)
+      Alert.alert("Error", "Failed to load beast details")
+      router.back()
+    } finally {
+      setLoadingBeast(false)
+    }
+  }
 
   const handleSell = async () => {
-    // Implement sell functionality here
-    Alert.alert("Coming Soon", "Selling functionality will be implemented soon!")
+    if (!beast || !price || isNaN(Number(price))) {
+      Alert.alert("Error", "Please enter a valid price")
+      return
+    }
+
+    try {
+      setLoading(true)
+
+      // Get wallet address and mnemonic
+      const walletAddress = await SecureStore.getItemAsync("walletAddress")
+      const mnemonic = await SecureStore.getItemAsync("mnemonic")
+
+      if (!walletAddress || !mnemonic) {
+        throw new Error("Wallet not found")
+      }
+
+      // Get user ID
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("wallet_address", walletAddress)
+        .single()
+
+      if (userError) throw userError
+      if (!userData) throw new Error("User not found")
+
+      // Create marketplace listing
+      const { data: listing, error: listingError } = await supabase.from("marketplace_listings").insert({
+        beast_id: beast.id,
+        seller_id: userData.id,
+        asset_id: beast.asset_id,
+        price: Number(price),
+        status: "active",
+        metadata: beast.metadata,
+        ipfs_url: beast.ipfs_url,
+      })
+
+      if (listingError) throw listingError
+
+      Alert.alert("Success", "Your beast has been listed for sale!", [
+        {
+          text: "View Marketplace",
+          onPress: () => router.push("/marketplace"),
+        },
+        {
+          text: "OK",
+          onPress: () => router.back(),
+        },
+      ])
+    } catch (error) {
+      console.error("Error listing beast:", error)
+      Alert.alert("Error", "Failed to list beast for sale")
+    } finally {
+      setLoading(false)
+    }
   }
+
+  const renderStatBar = (value: number, color: string) => (
+    <View style={styles.statBarContainer}>
+      <View style={[styles.statBarFill, { width: `${value}%`, backgroundColor: color }]} />
+    </View>
+  )
+
+  if (loadingBeast) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#7C3AED" />
+          <Text style={styles.loadingText}>Loading beast details...</Text>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  if (!beast) return null
 
   return (
     <SafeAreaView style={styles.container}>
@@ -40,6 +155,31 @@ export default function SellBeastScreen() {
             </Text>
           </View>
 
+          {/* Beast Preview */}
+          <View style={styles.beastPreview}>
+            <Image source={{ uri: beast.image_url }} style={styles.beastImage} />
+            <Text style={styles.beastName}>{beast.name}</Text>
+
+            <View style={styles.statsContainer}>
+              <View style={styles.statRow}>
+                <Sword size={16} color="#EF4444" />
+                {renderStatBar(beast.allocated_stats.attack, "#EF4444")}
+              </View>
+              <View style={styles.statRow}>
+                <Shield size={16} color="#3B82F6" />
+                {renderStatBar(beast.allocated_stats.defense, "#3B82F6")}
+              </View>
+              <View style={styles.statRow}>
+                <Zap size={16} color="#F59E0B" />
+                {renderStatBar(beast.allocated_stats.speed, "#F59E0B")}
+              </View>
+              <View style={styles.statRow}>
+                <Heart size={16} color="#10B981" />
+                {renderStatBar(beast.allocated_stats.health, "#10B981")}
+              </View>
+            </View>
+          </View>
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Price in $CAMP</Text>
             <View style={styles.priceInputContainer}>
@@ -60,7 +200,7 @@ export default function SellBeastScreen() {
             onPress={handleSell}
             disabled={!price || loading}
           >
-            <Text style={styles.listButtonText}>List Beast for Sale</Text>
+            <Text style={styles.listButtonText}>{loading ? "Listing Beast..." : "List Beast for Sale"}</Text>
           </TouchableOpacity>
         </BlurView>
       </Animated.View>
@@ -72,6 +212,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000000",
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingText: {
+    color: "#ffffff",
+    marginTop: 16,
+    fontSize: 16,
   },
   header: {
     flexDirection: "row",
@@ -117,6 +267,42 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 14,
     lineHeight: 20,
+  },
+  beastPreview: {
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  beastImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  beastName: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#ffffff",
+    marginBottom: 16,
+  },
+  statsContainer: {
+    width: "100%",
+    gap: 8,
+  },
+  statRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  statBarContainer: {
+    flex: 1,
+    height: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  statBarFill: {
+    height: "100%",
+    borderRadius: 2,
   },
   inputGroup: {
     marginBottom: 24,
