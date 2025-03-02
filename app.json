@@ -15,14 +15,21 @@
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyACn5LbHpFrDZrJ9pkg1OLc4EkntvcmNsA"
-        }
+        },
+        "usesCleartextTraffic": true,
+        "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ]
       },
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.nickthelegend.AlgoQuest",
-      "permissions": [
+      "permissions": [ 
+        "INTERNET",
+      "ACCESS_NETWORK_STATE",
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.ACCESS_FINE_LOCATION",

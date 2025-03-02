@@ -1,0 +1,60 @@
+INSERT INTO beast_abilities (name, type, element, power, accuracy, energy_cost, cooldown, description, metadata) VALUES
+-- Basic Attacks
+('Flame Strike', 'attack', 'fire', 75, 95, 20, 0, 'A basic fire attack', '{"effects": {"burn_chance": 10}}'),
+('Aqua Blast', 'attack', 'water', 70, 100, 15, 0, 'A reliable water attack', '{"effects": {"wet_chance": 15}}'),
+('Stone Edge', 'attack', 'earth', 85, 90, 25, 1, 'A powerful earth attack', '{"effects": {"stun_chance": 5}}'),
+('Wind Slash', 'attack', 'wind', 65, 100, 15, 0, 'A quick wind attack', '{"effects": {"speed_reduction": 10}}'),
+('Holy Smite', 'attack', 'light', 80, 95, 30, 1, 'A holy attack', '{"effects": {"blind_chance": 10}}'),
+('Shadow Strike', 'attack', 'dark', 90, 85, 35, 2, 'A dark attack', '{"effects": {"curse_chance": 15}}'),
+
+-- Healing Abilities
+('Rejuvenate', 'heal', 'light', 50, 100, 40, 2, 'Restore HP', '{"heal_percent": 25}'),
+('Life Surge', 'heal', 'water', 40, 100, 35, 2, 'Heal over time', '{"heal_percent": 15, "duration": 3}'),
+('Nature''s Blessing', 'heal', 'earth', 60, 100, 45, 3, 'Strong heal with defense buff', '{"heal_percent": 30, "defense_buff": 10}'),
+
+-- Buff Abilities
+('War Cry', 'buff', 'fire', 0, 100, 30, 3, 'Increase attack', '{"attack_boost": 25, "duration": 3}'),
+('Stone Skin', 'buff', 'earth', 0, 100, 25, 3, 'Increase defense', '{"defense_boost": 30, "duration": 3}'),
+('Wind Walker', 'buff', 'wind', 0, 100, 20, 3, 'Increase speed', '{"speed_boost": 20, "duration": 2}'),
+
+-- Debuff Abilities
+('Weaken', 'debuff', 'dark', 0, 90, 25, 3, 'Decrease enemy attack', '{"attack_reduction": 20, "duration": 2}'),
+('Slow', 'debuff', 'water', 0, 85, 20, 3, 'Decrease enemy speed', '{"speed_reduction": 25, "duration": 2}'),
+('Break Guard', 'debuff', 'earth', 0, 95, 30, 3, 'Decrease enemy defense', '{"defense_reduction": 30, "duration": 2}');
+
+CREATE TABLE beasts (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    owner_id UUID REFERENCES users(id),
+    asset_id VARCHAR(255) NOT NULL UNIQUE,
+    tier INTEGER CHECK (tier IN (1, 2, 3)),
+    image_url TEXT NOT NULL,
+    ipfs_url TEXT NOT NULL,
+    allocated_stats JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    metadata JSONB NOT NULL
+);
+CREATE TABLE beast_abilities (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(50) NOT NULL CHECK (type IN ('attack', 'heal', 'buff', 'debuff')),
+    element VARCHAR(50) NOT NULL CHECK (element IN ('fire', 'water', 'earth', 'wind', 'light', 'dark')),
+    power INTEGER CHECK (power >= 0),
+    accuracy INTEGER CHECK (accuracy BETWEEN 0 AND 100),
+    energy_cost INTEGER CHECK (energy_cost >= 0),
+    cooldown INTEGER DEFAULT 0,
+    description TEXT,
+    metadata JSONB
+);
+
+
+
+CREATE TABLE beast_ability_assignments (
+    beast_id UUID REFERENCES beasts(id),
+    ability_id UUID REFERENCES beast_abilities(id),
+    slot_number INTEGER CHECK (slot_number BETWEEN 1 AND 4),
+    PRIMARY KEY (beast_id, slot_number)
+);
+
+All these Attacks are there
+
