@@ -1,50 +1,94 @@
 "use client"
 
-import { useState } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from "react-native"
+import { useState, useEffect } from "react"
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
 import { ArrowLeft, Filter, Shield, Sword, Heart, Zap, Tag, ChevronDown, Crown, Star } from "lucide-react-native"
 import { router } from "expo-router"
+import { supabase } from "@/lib/supabase"
+import * as SecureStore from "expo-secure-store"
 
-// Mock data for inventory beasts
-const MOCK_BEASTS = [
-  {
-    id: "1",
-    name: "Thunder Dragon",
-    tier: 3,
-    rarity: "Legendary",
-    level: 15,
-    image: "https://example.com/beast1.jpg",
+interface Beast {
+  id: string
+  name: string
+  owner_id: string
+  asset_id: string
+  tier: number
+  image_url: string
+  ipfs_url: string
+  allocated_stats: {
+    attack: number
+    defense: number
+    speed: number
+    health: number
+  }
+  metadata: {
+    name: string
+    tier: number
+    type: string
     stats: {
-      attack: 85,
-      defense: 70,
-      speed: 90,
-      health: 75,
-    },
-  },
-  {
-    id: "2",
-    name: "Shadow Wolf",
-    tier: 2,
-    rarity: "Rare",
-    level: 10,
-    image: "https://example.com/beast2.jpg",
-    stats: {
-      attack: 70,
-      defense: 65,
-      speed: 95,
-      health: 60,
-    },
-  },
-  // Add more mock beasts...
-]
+      attack: number
+      defense: number
+      speed: number
+      health: number
+    }
+    abilities: string[]
+    image_url: string
+    created_at: string
+    description: string
+  }
+  created_at: string
+  for_sale?: boolean
+  price?: number
+}
 
 export default function InventoryScreen() {
-  const [sortBy, setSortBy] = useState<"tier" | "rarity" | "level">("tier")
+  const [sortBy, setSortBy] = useState<"tier" | "created" | "price">("tier")
   const [selectedBeast, setSelectedBeast] = useState<string | null>(null)
+  const [beasts, setBeasts] = useState<Beast[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadBeasts()
+  }, [])
+
+  const loadBeasts = async () => {
+    try {
+      setLoading(true)
+      const walletAddress = await SecureStore.getItemAsync("walletAddress")
+      if (!walletAddress) throw new Error("No wallet address found")
+
+      // Get user ID from wallet address
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("wallet_address", walletAddress)
+        .single()
+
+      if (userError) throw userError
+      if (!userData) throw new Error("User not found")
+
+      // Get beasts owned by user
+      const { data: beastsData, error: beastsError } = await supabase
+        .from("beasts")
+        .select("*")
+        .eq("owner_id", userData.id)
+        .order("created_at", { ascending: false })
+
+      if (beastsError) throw beastsError
+
+      setBeasts(beastsData || [])
+    } catch (err) {
+      console.error("Error loading beasts:", err)
+      setError("Failed to load beasts")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const getTierColor = (tier: number) => {
     switch (tier) {
@@ -57,22 +101,43 @@ export default function InventoryScreen() {
     }
   }
 
-  const getRarityColor = (rarity: string) => {
-    switch (rarity.toLowerCase()) {
-      case "legendary":
-        return "#FFD700"
-      case "rare":
-        return "#3B82F6"
-      default:
-        return "#94A3B8"
-    }
-  }
-
   const renderStatBar = (value: number, color: string) => (
     <View style={styles.statBarContainer}>
       <View style={[styles.statBarFill, { width: `${value}%`, backgroundColor: color }]} />
     </View>
   )
+
+  const getLegendaryCount = () => {
+    return beasts.filter((beast) => beast.tier === 3).length
+  }
+
+  const getForSaleCount = () => {
+    return beasts.filter((beast) => beast.for_sale).length
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#7C3AED" />
+          <Text style={styles.loadingText}>Loading your beasts...</Text>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadBeasts}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    )
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -101,17 +166,17 @@ export default function InventoryScreen() {
             <LinearGradient colors={["rgba(124, 58, 237, 0.2)", "rgba(0, 0, 0, 0)"]} style={StyleSheet.absoluteFill} />
             <View style={styles.statItem}>
               <Crown size={24} color="#7C3AED" />
-              <Text style={styles.statValue}>{MOCK_BEASTS.length}</Text>
+              <Text style={styles.statValue}>{beasts.length}</Text>
               <Text style={styles.statLabel}>Total Beasts</Text>
             </View>
             <View style={styles.statItem}>
               <Star size={24} color="#FFD700" />
-              <Text style={styles.statValue}>3</Text>
+              <Text style={styles.statValue}>{getLegendaryCount()}</Text>
               <Text style={styles.statLabel}>Legendary</Text>
             </View>
             <View style={styles.statItem}>
               <Tag size={24} color="#3B82F6" />
-              <Text style={styles.statValue}>5</Text>
+              <Text style={styles.statValue}>{getForSaleCount()}</Text>
               <Text style={styles.statLabel}>For Sale</Text>
             </View>
           </BlurView>
@@ -119,71 +184,92 @@ export default function InventoryScreen() {
 
         {/* Beast Grid */}
         <View style={styles.beastGrid}>
-          {MOCK_BEASTS.map((beast, index) => (
-            <Animated.View key={beast.id} entering={FadeInDown.delay(400 + index * 100)} style={styles.beastCard}>
-              <TouchableOpacity
-                onPress={() => setSelectedBeast(selectedBeast === beast.id ? null : beast.id)}
-                style={styles.beastCardContent}
-              >
-                <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
-                  <LinearGradient
-                    colors={[`${getTierColor(beast.tier)}20`, "rgba(0, 0, 0, 0)"]}
-                    style={StyleSheet.absoluteFill}
-                  />
-                </BlurView>
+          {beasts.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No beasts found</Text>
+              <TouchableOpacity style={styles.createButton} onPress={() => router.push("/beast-creation")}>
+                <Text style={styles.createButtonText}>Create Your First Beast</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            beasts.map((beast, index) => (
+              <Animated.View key={beast.id} entering={FadeInDown.delay(400 + index * 100)} style={styles.beastCard}>
+                <TouchableOpacity
+                  onPress={() =>
+                    router.push({
+                      pathname: "/beast/[id]",
+                      params: { id: beast.id },
+                    })
+                  }
+                  style={styles.beastCardContent}
+                >
+                  <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill}>
+                    <LinearGradient
+                      colors={[`${getTierColor(beast.tier)}20`, "rgba(0, 0, 0, 0)"]}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  </BlurView>
 
-                <View style={styles.cardHeader}>
-                  <View style={[styles.tierBadge, { backgroundColor: getTierColor(beast.tier) }]}>
-                    <Text style={styles.tierText}>Tier {beast.tier}</Text>
+                  <View style={styles.cardHeader}>
+                    <View style={[styles.tierBadge, { backgroundColor: getTierColor(beast.tier) }]}>
+                      <Text style={styles.tierText}>Tier {beast.tier}</Text>
+                    </View>
+                    {beast.for_sale && (
+                      <View style={styles.forSaleBadge}>
+                        <Tag size={12} color="#10B981" />
+                        <Text style={styles.forSaleText}>{beast.price} $CAMP</Text>
+                      </View>
+                    )}
                   </View>
-                  <View style={[styles.rarityBadge, { backgroundColor: getRarityColor(beast.rarity) }]}>
-                    <Text style={styles.rarityText}>{beast.rarity}</Text>
+
+                  <View style={styles.imageContainer}>
+                    <Image source={{ uri: beast.image_url }} style={styles.beastImage} resizeMode="cover" />
                   </View>
-                </View>
 
-                <View style={styles.imageContainer}>
-                  <Image
-                    source={{ uri: "/placeholder.svg?height=200&width=200" }}
-                    style={styles.beastImage}
-                    resizeMode="cover"
-                  />
-                </View>
+                  <Text style={styles.beastName}>{beast.name}</Text>
 
-                <Text style={styles.beastName}>{beast.name}</Text>
-                <Text style={styles.beastLevel}>Level {beast.level}</Text>
-
-                {selectedBeast === beast.id && (
-                  <Animated.View entering={FadeInDown} style={styles.statsContainer}>
+                  <View style={styles.statsContainer}>
                     <View style={styles.statRow}>
                       <Sword size={16} color="#EF4444" />
-                      {renderStatBar(beast.stats.attack, "#EF4444")}
+                      {renderStatBar(beast.allocated_stats.attack, "#EF4444")}
                     </View>
                     <View style={styles.statRow}>
                       <Shield size={16} color="#3B82F6" />
-                      {renderStatBar(beast.stats.defense, "#3B82F6")}
+                      {renderStatBar(beast.allocated_stats.defense, "#3B82F6")}
                     </View>
                     <View style={styles.statRow}>
                       <Zap size={16} color="#F59E0B" />
-                      {renderStatBar(beast.stats.speed, "#F59E0B")}
+                      {renderStatBar(beast.allocated_stats.speed, "#F59E0B")}
                     </View>
                     <View style={styles.statRow}>
                       <Heart size={16} color="#10B981" />
-                      {renderStatBar(beast.stats.health, "#10B981")}
+                      {renderStatBar(beast.allocated_stats.health, "#10B981")}
                     </View>
+                  </View>
 
-                    <View style={styles.actionButtons}>
-                      <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#7C3AED" }]}>
+                  <View style={styles.actionButtons}>
+                    {!beast.for_sale && (
+                      <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: "#7C3AED" }]}
+                        onPress={() => router.push({
+                          pathname: "/beast/[id]/sell",
+                          params: { id: beast.id },
+                        })}
+                      >
                         <Text style={styles.actionButtonText}>List for Sale</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#EF4444" }]}>
-                        <Text style={styles.actionButtonText}>Battle</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </Animated.View>
-                )}
-              </TouchableOpacity>
-            </Animated.View>
-          ))}
+                    )}
+                    <TouchableOpacity
+                      style={[styles.actionButton, { backgroundColor: "#EF4444" }]}
+                      onPress={() => router.push("/find-players")}
+                    >
+                      <Text style={styles.actionButtonText}>Battle</Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -195,12 +281,45 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#000000",
   },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingText: {
+    color: "#ffffff",
+    marginTop: 16,
+    fontSize: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+  },
+  errorText: {
+    color: "#EF4444",
+    fontSize: 16,
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     padding: 16,
-    paddingTop: 20,
+    paddingTop: 60,
   },
   backButton: {
     width: 40,
@@ -268,6 +387,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "rgba(255, 255, 255, 0.6)",
   },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 32,
+  },
+  emptyText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  createButton: {
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  createButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
   beastGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -282,11 +422,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     overflow: "hidden",
+    padding: 12,
   },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: 12,
+    marginBottom: 12,
   },
   tierBadge: {
     paddingHorizontal: 8,
@@ -298,20 +439,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  rarityBadge: {
+  forSaleBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(16, 185, 129, 0.2)",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
-  rarityText: {
-    color: "#ffffff",
+  forSaleText: {
+    color: "#10B981",
     fontSize: 12,
     fontWeight: "600",
   },
   imageContainer: {
     width: "100%",
     aspectRatio: 1,
+    borderRadius: 12,
     backgroundColor: "rgba(255, 255, 255, 0.05)",
+    overflow: "hidden",
+    marginBottom: 12,
   },
   beastImage: {
     width: "100%",
@@ -321,19 +469,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#ffffff",
-    padding: 12,
-    paddingBottom: 4,
-  },
-  beastLevel: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.6)",
-    padding: 12,
-    paddingTop: 0,
+    marginBottom: 12,
   },
   statsContainer: {
-    padding: 12,
-    paddingTop: 0,
     gap: 8,
+    marginBottom: 12,
   },
   statRow: {
     flexDirection: "row",
@@ -354,7 +494,6 @@ const styles = StyleSheet.create({
   actionButtons: {
     flexDirection: "row",
     gap: 8,
-    marginTop: 12,
   },
   actionButton: {
     flex: 1,
