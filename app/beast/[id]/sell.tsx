@@ -10,6 +10,13 @@ import { ArrowLeft, Tag, AlertCircle, Shield, Sword, Heart, Zap } from "lucide-r
 import { router, useLocalSearchParams } from "expo-router"
 import { supabase } from "@/lib/supabase"
 import * as SecureStore from "expo-secure-store"
+import algosdk from "algosdk"
+
+const METHODS = [
+  new algosdk.ABIMethod({ name: "optIntoAsset", desc: "", args: [{ type: "uint64", name: "asset", desc: "" }], returns: { type: "void", desc: "" } }),
+  
+];
+
 
 interface Beast {
   id: string
@@ -69,10 +76,39 @@ export default function SellBeastScreen() {
       // Get wallet address and mnemonic
       const walletAddress = await SecureStore.getItemAsync("walletAddress")
       const mnemonic = await SecureStore.getItemAsync("mnemonic")
+      if (!mnemonic) throw new Error("No mnemonic found")
+
+      const account = algosdk.mnemonicToSecretKey(mnemonic)
 
       if (!walletAddress || !mnemonic) {
         throw new Error("Wallet not found")
       }
+      const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
+
+      // 5. Get suggested parameters
+      const suggestedParams = await algodClient.getTransactionParams().do()
+
+
+      const appOptInTxn = algosdk.makeApplicationNoOpTxnFromObject({
+        sender: account.addr,
+        appIndex: 735044137,
+        appArgs: [
+          algosdk.getMethodByName(METHODS, 'optIntoAsset').getSelector(),
+          algosdk.encodeUint64(734866601),
+          
+      ],
+      foreignAssets:[734866601],
+      suggestedParams: { ...suggestedParams, fee: 30000 },
+      });
+
+await algodClient
+  .sendRawTransaction(appOptInTxn.signTxn(account.sk))
+  .do();
+await algosdk.waitForConfirmation(
+  algodClient,
+  appOptInTxn.txID().toString(),
+  3
+);
 
       // Get user ID
       const { data: userData, error: userError } = await supabase
