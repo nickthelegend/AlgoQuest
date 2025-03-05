@@ -14,7 +14,7 @@ import algosdk from "algosdk"
 
 const METHODS = [
   new algosdk.ABIMethod({ name: "optIntoAsset", desc: "", args: [{ type: "uint64", name: "asset", desc: "" }], returns: { type: "void", desc: "" } }),
-  new algosdk.ABIMethod({ name: "buyNFT", desc: "", args: [{ type: "axfer", name: "ebaTxn", desc: "" }], returns: { type: "void", desc: "" } }),
+  new algosdk.ABIMethod({ name: "optIntoNFT", desc: "", args: [{ type: "uint64", name: "asset", desc: "" }], returns: { type: "void", desc: "" } }),
 
 ];
 
@@ -84,66 +84,141 @@ export default function SellBeastScreen() {
       if (!walletAddress || !mnemonic) {
         throw new Error("Wallet not found")
       }
+
+
+      const payload = {
+        seller: walletAddress,
+        price
+      };
+  
+      // Make the API request
+      const response = await fetch('http://172.16.2.136:3000/api/createApp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+  
+      // Check if the request was successful
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create application');
+      }
+  
+      // Parse the response
+      const data = await response.json();
+      
+      // Log the app details
+      console.log('Application created successfully:');
+      console.log('App ID:', data.appId);
+      console.log('App Address:', data.appAddress);
+      const appID = data.appId;
+      const appAddress = data.appAddress;
+      const questAssetID= 734399300;
+      const beastAssetID= beast.asset_id;
+
+
       const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
 
 //       // 5. Get suggested parameters
       const suggestedParams = await algodClient.getTransactionParams().do()
 
 
-//       const appOptInTxn = algosdk.makeApplicationNoOpTxnFromObject({
-//         sender: account.addr,
-//         appIndex: 735044137,
-//         appArgs: [
-//           algosdk.getMethodByName(METHODS, 'optIntoAsset').getSelector(),
-//           algosdk.encodeUint64(734866601),
-          
-//       ],
-//       foreignAssets:[734866601],
-//       suggestedParams: { ...suggestedParams, fee: 30000 },
-//       });
-
-// await algodClient
-//   .sendRawTransaction(appOptInTxn.signTxn(account.sk))
-//   .do();
-// await algosdk.waitForConfirmation(
-//   algodClient,
-//   appOptInTxn.txID().toString(),
-//   3
-// );
-const amount = 10; // 10,000,000 microAlgos
-const atc = new algosdk.AtomicTransactionComposer();
-
-// Create the AssetTransferTxn:
-const assetTransferTxn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
-  sender: walletAddress,              // the account sending the payment
-  receiver: "5XKN6WRT27HGNTGMYI7TLIG6RPFMZQR7R7TSL4RYM4ZFDHFELS7L3OOHHY",            // the app's address, as expected by your contract
-  assetIndex: 734399300,        // the asset ID you expect to be transferred
-  amount,                        // the amount to transfer (10 algos in microAlgos)
-  suggestedParams,               // obtained from algod
-});
-
-// If you are using an atomic transaction composer (ATC),
-// you need to wrap it with its signer:
-const assetTransferTxnWithSigner = {
-  txn: assetTransferTxn,
-  signer: algosdk.makeBasicAccountTransactionSigner(account),
-};
-
-// Then pass assetTransferTxnWithSigner as the argument for your ABI method call:
-atc.addMethodCall({
-  appID: 735051464,
-  method: new algosdk.ABIMethod({ name: "buyNFT", desc: "", args: [{ type: "axfer", name: "ebaTxn", desc: "" }], returns: { type: "void", desc: "" } }), // your ABI method (buyNFT)
-  signer: algosdk.makeBasicAccountTransactionSigner(account),
-  methodArgs: [assetTransferTxnWithSigner], 
-  sender: "3FRGAL3WV46LP5H45L267DMCSSUWKQQLT4XFDYKSRIJBOJE6H5XEJMLK3Y",
-  suggestedParams,
-});
+      const txn1 = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+        sender: account.addr,
+        receiver: appAddress,
+        amount: 500000,
+        suggestedParams,
+    });
+    
+    const signedTxn = txn1.signTxn(account.sk)
+      const { txid } = await algodClient.sendRawTransaction(signedTxn).do()
+      
+      await algosdk.waitForConfirmation(algodClient, txid, 4)
 
 
-const result = await atc.execute(algodClient, 4);
-for (const mr of result.methodResults) {
-  console.log(`${mr.returnValue}`);
-}
+
+
+    const txn2 = algosdk.makeApplicationNoOpTxnFromObject({
+        sender: account.addr,
+        appIndex: Number(appID),
+        appArgs: [
+            algosdk.getMethodByName(METHODS, 'optIntoAsset').getSelector(),
+            algosdk.encodeUint64(questAssetID),
+        ],
+        foreignAssets: [questAssetID],
+        suggestedParams: { ...suggestedParams, fee: Number(30) },
+    });
+    
+    const txn3 = algosdk.makeApplicationNoOpTxnFromObject({
+      sender: account.addr,
+      appIndex: Number(appID),
+      appArgs: [
+          algosdk.getMethodByName(METHODS, 'optIntoNFT').getSelector(),
+          algosdk.encodeUint64(Number(beastAssetID)),
+      ],
+      foreignAssets: [Number(beastAssetID)],
+      suggestedParams: { ...suggestedParams, fee: Number(30) },
+  });
+  const nftTransfer = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+    sender: account.addr,
+    receiver: appAddress,
+    assetIndex: Number(beastAssetID),
+    amount: 1,
+    suggestedParams,
+  })
+    
+    // Assign a group ID to both transactions
+    const txns = [txn2, txn3,nftTransfer];
+    const txGroup = algosdk.assignGroupID(txns);
+    
+    // Sign both transactions
+    const signedTxns = txns.map(txn => txn.signTxn(account.sk));
+    const txId = txn1.txID(); // Use the first transaction's txID
+
+    // Send the signed transactions atomically
+    await algodClient.sendRawTransaction(signedTxns).do();
+    
+await algosdk.waitForConfirmation(
+  algodClient,
+  txId.toString(),
+  3
+);
+// const amount = 10; // 10,000,000 microAlgos
+// const atc = new algosdk.AtomicTransactionComposer();
+
+// // Create the AssetTransferTxn:
+// const assetTransferTxn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+//   sender: walletAddress,              // the account sending the payment
+//   receiver: "5XKN6WRT27HGNTGMYI7TLIG6RPFMZQR7R7TSL4RYM4ZFDHFELS7L3OOHHY",            // the app's address, as expected by your contract
+//   assetIndex: 734399300,        // the asset ID you expect to be transferred
+//   amount,                        // the amount to transfer (10 algos in microAlgos)
+//   suggestedParams,               // obtained from algod
+// });
+
+// // If you are using an atomic transaction composer (ATC),
+// // you need to wrap it with its signer:
+// const assetTransferTxnWithSigner = {
+//   txn: assetTransferTxn,
+//   signer: algosdk.makeBasicAccountTransactionSigner(account),
+// };
+
+// // Then pass assetTransferTxnWithSigner as the argument for your ABI method call:
+// atc.addMethodCall({
+//   appID: 735051464,
+//   method: new algosdk.ABIMethod({ name: "buyNFT", desc: "", args: [{ type: "axfer", name: "ebaTxn", desc: "" }], returns: { type: "void", desc: "" } }), // your ABI method (buyNFT)
+//   signer: algosdk.makeBasicAccountTransactionSigner(account),
+//   methodArgs: [assetTransferTxnWithSigner], 
+//   sender: "3FRGAL3WV46LP5H45L267DMCSSUWKQQLT4XFDYKSRIJBOJE6H5XEJMLK3Y",
+//   suggestedParams,
+// });
+
+
+// const result = await atc.execute(algodClient, 4);
+// for (const mr of result.methodResults) {
+//   console.log(`${mr.returnValue}`);
+// }
 
 
 
