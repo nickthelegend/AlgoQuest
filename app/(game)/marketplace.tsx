@@ -112,7 +112,16 @@ export default function MarketplaceScreen() {
       // 2. Signing it with the user's wallet
       // 3. Updating the marketplace listing status
       // 4. Transferring the NFT
-      Alert.alert("Coming Soon", "NFT purchasing will be implemented soon!")
+      router.push({
+        pathname: "/beast/buy",
+        params: {
+          listingId: listing.id,
+          beastId: listing.beast_id,
+          assetId: listing.asset_id,
+          price: listing.price.toString(),
+          sellerId: listing.seller_id,
+        },
+      })
     } catch (error) {
       console.error("Error buying NFT:", error)
       Alert.alert("Error", "Failed to complete purchase")
