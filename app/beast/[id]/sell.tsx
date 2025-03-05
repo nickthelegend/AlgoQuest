@@ -42,6 +42,7 @@ export default function SellBeastScreen() {
   const [price, setPrice] = useState("")
   const [loading, setLoading] = useState(false)
   const [loadingBeast, setLoadingBeast] = useState(true)
+  const [isAlreadyListed, setIsAlreadyListed] = useState(false)
 
   useEffect(() => {
     loadBeast()
@@ -56,6 +57,19 @@ export default function SellBeastScreen() {
       if (!data) throw new Error("Beast not found")
 
       setBeast(data)
+
+      // Check if beast is already listed
+      const { data: listingData, error: listingError } = await supabase
+        .from("marketplace_listings")
+        .select("id")
+        .eq("beast_id", id)
+        .eq("status", "active")
+        .single()
+        console.log(id)
+
+      if (listingData) {
+        setIsAlreadyListed(true)
+      }
     } catch (err) {
       console.error("Error loading beast:", err)
       Alert.alert("Error", "Failed to load beast details")
@@ -249,6 +263,18 @@ await algosdk.waitForConfirmation(
 
       if (listingError) throw listingError
 
+      // Update the listing with app details
+      const { error: updateError } = await supabase
+        .from("marketplace_listings")
+        .update({
+          app_id: appID,
+          app_address: appAddress,
+        })
+        .eq("beast_id", beast.id)
+        .eq("status", "active")
+
+      if (updateError) throw updateError
+
       Alert.alert("Success", "Your beast has been listed for sale!", [
         {
           text: "View Marketplace",
@@ -332,28 +358,40 @@ await algosdk.waitForConfirmation(
             </View>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Price in $CAMP</Text>
-            <View style={styles.priceInputContainer}>
-              <Tag size={20} color="rgba(255, 255, 255, 0.6)" />
-              <TextInput
-                style={styles.priceInput}
-                placeholder="Enter price..."
-                placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                value={price}
-                onChangeText={setPrice}
-                keyboardType="numeric"
-              />
+          {isAlreadyListed ? (
+            <View style={styles.alreadyListedContainer}>
+              <AlertCircle size={24} color="#EF4444" />
+              <Text style={styles.alreadyListedText}>This beast is already listed on the marketplace.</Text>
+              <TouchableOpacity style={styles.viewListingButton} onPress={() => router.push("/marketplace")}>
+                <Text style={styles.viewListingButtonText}>View Marketplace</Text>
+              </TouchableOpacity>
             </View>
-          </View>
+          ) : (
+            <>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Price in $CAMP</Text>
+                <View style={styles.priceInputContainer}>
+                  <Tag size={20} color="rgba(255, 255, 255, 0.6)" />
+                  <TextInput
+                    style={styles.priceInput}
+                    placeholder="Enter price..."
+                    placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                    value={price}
+                    onChangeText={setPrice}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
 
-          <TouchableOpacity
-            style={[styles.listButton, (!price || loading) && styles.listButtonDisabled]}
-            onPress={handleSell}
-            disabled={!price || loading}
-          >
-            <Text style={styles.listButtonText}>{loading ? "Listing Beast..." : "List Beast for Sale"}</Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.listButton, (!price || loading) && styles.listButtonDisabled]}
+                onPress={handleSell}
+                disabled={!price || loading}
+              >
+                <Text style={styles.listButtonText}>{loading ? "Listing Beast..." : "List Beast for Sale"}</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </BlurView>
       </Animated.View>
     </SafeAreaView>
@@ -493,6 +531,31 @@ const styles = StyleSheet.create({
   listButtonText: {
     color: "#ffffff",
     fontSize: 16,
+    fontWeight: "600",
+  },
+  alreadyListedContainer: {
+    alignItems: "center",
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  alreadyListedText: {
+    color: "#ffffff",
+    fontSize: 16,
+    textAlign: "center",
+    marginVertical: 12,
+  },
+  viewListingButton: {
+    backgroundColor: "#EF4444",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  viewListingButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
     fontWeight: "600",
   },
 })
