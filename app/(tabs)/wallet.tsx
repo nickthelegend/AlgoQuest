@@ -11,16 +11,9 @@ import {
   Alert,
   Linking,
   Image,
+  ScrollView,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import Animated, {
-  FadeInDown,
-  FadeInUp,
-  interpolate,
-  useAnimatedScrollHandler,
-  useAnimatedStyle,
-  useSharedValue,
-} from "react-native-reanimated"
 import { BlurView } from "expo-blur"
 import { Copy, Send, Wallet, ArrowDown, Check, Coins, History } from "lucide-react-native"
 import { useState, useEffect } from "react"
@@ -29,7 +22,7 @@ import * as SecureStore from "expo-secure-store"
 import algosdk from "algosdk"
 import { QUEST_COIN_ASSET_ID } from "@/lib/algoClient"
 import { router } from "expo-router"
-import QRCode from "react-native-qrcode-svg"
+import QRCodeStyled from "react-native-qrcode-styled"
 
 const { width } = Dimensions.get("window")
 const CARD_WIDTH = width * 0.9
@@ -43,7 +36,6 @@ interface NFTAsset {
 }
 
 export default function WalletScreen() {
-  const scrollY = useSharedValue(0)
   const [refreshing, setRefreshing] = useState(false)
   const [copied, setCopied] = useState(false)
   const [publicAddress, setPublicAddress] = useState<string>("")
@@ -216,23 +208,6 @@ export default function WalletScreen() {
     }
   }
 
-  const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (event) => {
-      scrollY.value = event.contentOffset.y
-    },
-  })
-
-  const headerStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        {
-          translateY: interpolate(scrollY.value, [0, 100], [0, -50], "clamp"),
-        },
-      ],
-      opacity: interpolate(scrollY.value, [0, 100], [1, 0], "clamp"),
-    }
-  })
-
   const onRefresh = async () => {
     setRefreshing(true)
     await loadWalletAddress()
@@ -288,14 +263,12 @@ export default function WalletScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Animated.ScrollView
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ffffff" />}
       >
         {/* Balance Card */}
-        <Animated.View entering={FadeInDown.delay(200)} style={[styles.header, headerStyle]}>
+        <View style={styles.header}>
           <BlurView intensity={40} tint="dark" style={styles.balanceCard}>
             <View style={styles.balanceHeader}>
               <Wallet size={24} color="#ffffff" />
@@ -315,7 +288,47 @@ export default function WalletScreen() {
             {/* QR Code */}
             {publicAddress && (
               <View style={styles.qrCodeContainer}>
-                <QRCode value={publicAddress} size={150} color="#ffffff" backgroundColor="transparent" />
+                <View style={styles.qrCodeWrapper}>
+                  <QRCodeStyled
+                    data={publicAddress}
+                    pieceSize={8}
+                    pieceBorderRadius={2}
+                    isPiecesGlued
+                    padding={16}
+                    color="#7C3AED"
+                    // gradient={{
+                    //   type: "linear",
+                    //   options: {
+                    //     start: { x: 0, y: 0 },
+                    //     end: { x: 1, y: 1 },
+                    //     colors: ["#7C3AED", "#4F46E5"],
+                    //     locations: [0, 1],
+                    //   },
+                    // }}
+                    outerEyesOptions={{
+                      topLeft: {
+                        borderRadius: 12,
+                      },
+                      topRight: {
+                        borderRadius: 12,
+                      },
+                      bottomLeft: {
+                        borderRadius: 12,
+                      },
+                    }}
+                    innerEyesOptions={{
+                      borderRadius: 6,
+                    }}
+                    logo={{
+                      href: require("@/assets/sad.jpg"),
+                      padding: 4,
+                      scale: 2,
+                      hidePieces: false,
+                      borderRadius: 12,
+                    }}
+                    style={{ backgroundColor: "white" }}
+                  />
+                </View>
                 <Text style={styles.qrCodeText}>Scan to get my wallet address</Text>
               </View>
             )}
@@ -354,10 +367,10 @@ export default function WalletScreen() {
               </TouchableOpacity>
             </View>
           </BlurView>
-        </Animated.View>
+        </View>
 
         {/* Quest Coins Card */}
-        <Animated.View entering={FadeInDown.delay(300)} style={styles.header}>
+        <View style={styles.header}>
           <BlurView intensity={40} tint="dark" style={styles.balanceCard}>
             <View style={styles.balanceHeader}>
               <Coins size={24} color="#ffffff" />
@@ -368,6 +381,18 @@ export default function WalletScreen() {
               <>
                 <Text style={styles.balanceAmount}>{questCoinBalance} Q</Text>
                 <Text style={styles.balanceUsd}>Quest Coins can be earned by completing quests</Text>
+                <TouchableOpacity
+                  style={styles.questSendButton}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/send",
+                      params: { assetType: "quest" },
+                    })
+                  }
+                >
+                  <Send size={20} color="#ffffff" />
+                  <Text style={styles.questSendButtonText}>Send Quest Coins</Text>
+                </TouchableOpacity>
               </>
             ) : (
               <TouchableOpacity
@@ -379,51 +404,15 @@ export default function WalletScreen() {
               </TouchableOpacity>
             )}
           </BlurView>
-        </Animated.View>
+        </View>
 
         {/* NFT Gallery */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>NFT Gallery</Text>
           <View style={styles.nftGrid}>
-            {loading ? (
-              <Text style={styles.loadingText}>Loading NFTs...</Text>
-            ) : nfts.length > 0 ? (
-              nfts.map((nft, index) => (
-                <Animated.View key={nft.id} entering={FadeInUp.delay(400 + index * 200)} style={styles.nftCard}>
-                  <TouchableOpacity
-                    onPress={() =>
-                      router.push({
-                        pathname: "/nft-details",
-                        params: { assetId: nft.id },
-                      })
-                    }
-                  >
-                    <BlurView intensity={40} tint="dark" style={styles.nftCardContent}>
-                      <View style={styles.nftImageContainer}>
-                        {nft.image ? (
-                          <Image source={{ uri: nft.image }} style={styles.nftImage} resizeMode="cover" />
-                        ) : (
-                          <View style={[styles.nftImage, styles.nftImagePlaceholder]}>
-                            <Text style={styles.placeholderText}>No Image</Text>
-                          </View>
-                        )}
-                      </View>
-                      <View style={styles.nftInfo}>
-                        <Text style={styles.nftName} numberOfLines={1}>
-                          {nft.name}
-                        </Text>
-                        <Text style={styles.nftUnitName}>{nft.unitName}</Text>
-                      </View>
-                    </BlurView>
-                  </TouchableOpacity>
-                </Animated.View>
-              ))
-            ) : (
-              <Text style={styles.emptyText}>No NFTs found</Text>
-            )}
+           
           </View>
         </View>
-      </Animated.ScrollView>
+      </ScrollView>
     </SafeAreaView>
   )
 }
@@ -474,14 +463,25 @@ const styles = StyleSheet.create({
     marginVertical: 20,
     padding: 16,
     backgroundColor: "rgba(0, 0, 0, 0.3)",
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
   },
+  qrCodeWrapper: {
+    padding: 12,
+    backgroundColor: "white",
+    borderRadius: 16,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
   qrCodeText: {
-    color: "rgba(255, 255, 255, 0.6)",
+    color: "rgba(255, 255, 255, 0.8)",
     fontSize: 14,
-    marginTop: 12,
+    marginTop: 16,
+    fontWeight: "500",
   },
   addressSection: {
     marginBottom: 16,
@@ -527,7 +527,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   section: {
-    marginBottom: 24,
+    marginBottom: 60,
   },
   sectionTitle: {
     color: "#ffffff",
@@ -664,6 +664,23 @@ const styles = StyleSheet.create({
   viewTransactionsText: {
     color: "#ffffff",
     fontSize: 14,
+    fontWeight: "600",
+  },
+  questSendButton: {
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
+    padding: 12,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "rgba(124, 58, 237, 0.3)",
+  },
+  questSendButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
     fontWeight: "600",
   },
 })
