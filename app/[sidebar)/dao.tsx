@@ -1,10 +1,11 @@
 "use client"
 
-import { View, Text, StyleSheet } from "react-native"
-import { Vote, Clock } from "lucide-react-native"
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native"
+import { Vote, Clock, ArrowLeft, Plus } from "lucide-react-native"
 import { BlurView } from "expo-blur"
 import Animated, { FadeInDown } from "react-native-reanimated"
 import ScreenLayout from "@/components/screen-layout"
+import { router } from "expo-router"
 
 const proposals = [
   {
@@ -33,7 +34,20 @@ const proposals = [
 export default function DAOScreen() {
   return (
     <ScreenLayout>
-      <Text style={styles.title}>DAO Proposals</Text>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <ArrowLeft size={24} color="#ffffff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>DAO Proposals</Text>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity style={styles.infoButton} onPress={() => router.push("/what-is-dao")}>
+            <Text style={styles.infoButtonText}>Info</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.createButton} onPress={() => router.push("/create-dao")}>
+            <Plus size={24} color="#ffffff" />
+          </TouchableOpacity>
+        </View>
+      </View>
       <View style={styles.proposalsGrid}>
         {proposals.map((proposal, index) => (
           <Animated.View key={proposal.id} entering={FadeInDown.delay(200 * index)}>
@@ -66,11 +80,32 @@ export default function DAOScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: {
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  headerTitle: {
     fontSize: 28,
     fontWeight: "bold",
     color: "#ffffff",
-    marginBottom: 24,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  createButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#7C3AED",
+    alignItems: "center",
+    justifyContent: "center",
   },
   proposalsGrid: {
     gap: 16,
@@ -121,6 +156,24 @@ const styles = StyleSheet.create({
   timeText: {
     color: "#94A3B8",
     fontSize: 14,
+  },
+  headerButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  infoButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
   },
 })
 

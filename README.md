@@ -20,6 +20,9 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 * [X] Game, Inventory,  Marketplace , in game tab
 * [ ] Challenge Nearby Battle Arena game, 
 * [ ] Quests List Out the quests that are active
+* [ ] Send Quest Coins to an ID, Qr code should be also avaliable when click , scan qr we can also use camera to scan and send funds to that account
+* [X] DAO Back button , Create new DAO , What to do DAO, options also , yes or No --- Only Front End
+
 
 
 
