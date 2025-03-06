@@ -1,7 +1,17 @@
 "use client"
 
 import "react-native-get-random-values"
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, RefreshControl, Alert, Linking, Image, } from "react-native"
+import {
+  View,
+  Text,
+  StyleSheet,
+  Dimensions,
+  TouchableOpacity,
+  RefreshControl,
+  Alert,
+  Linking,
+  Image,
+} from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import Animated, {
   FadeInDown,
@@ -12,41 +22,17 @@ import Animated, {
   useSharedValue,
 } from "react-native-reanimated"
 import { BlurView } from "expo-blur"
-import { Copy, Send, Wallet, ArrowDown, Check, Coins,History } from "lucide-react-native"
+import { Copy, Send, Wallet, ArrowDown, Check, Coins, History } from "lucide-react-native"
 import { useState, useEffect } from "react"
 import * as Clipboard from "expo-clipboard"
 import * as SecureStore from "expo-secure-store"
 import algosdk from "algosdk"
 import { QUEST_COIN_ASSET_ID } from "@/lib/algoClient"
-import { router } from "expo-router";
+import { router } from "expo-router"
+import QRCode from "react-native-qrcode-svg"
 
 const { width } = Dimensions.get("window")
 const CARD_WIDTH = width * 0.9
-
-// Mock data - replace with real data from Algorand SDK
-const mockNFTs = [
-  {
-    id: 1,
-    name: "Campus Pioneer",
-    image:
-      "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
-    rarity: "Rare",
-  },
-  {
-    id: 2,
-    name: "Quest Master",
-    image:
-      "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
-    rarity: "Epic",
-  },
-  {
-    id: 3,
-    name: "Social Butterfly",
-    image:
-      "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
-    rarity: "Common",
-  },
-]
 const NFT_SIZE = (width - 48) / 2 // 2 columns with 16px padding and gap
 
 interface NFTAsset {
@@ -55,6 +41,7 @@ interface NFTAsset {
   image: string
   unitName: string
 }
+
 export default function WalletScreen() {
   const scrollY = useSharedValue(0)
   const [refreshing, setRefreshing] = useState(false)
@@ -62,15 +49,12 @@ export default function WalletScreen() {
   const [publicAddress, setPublicAddress] = useState<string>("")
   const [algoBalance, setAlgoBalance] = useState<number>(0)
   const [algoPrice, setAlgoPrice] = useState<number>(0)
-// New state for Quest Coins
-const [questCoinBalance, setQuestCoinBalance] = useState<number>(0)
-const [isOptedIn, setIsOptedIn] = useState(false)
-const [optInLoading, setOptInLoading] = useState(false)
-const [transactionCount, setTransactionCount] = useState(0)
-// const activeAddress = await SecureStore.getItemAsync("walletAddress")
-const [nfts, setNfts] = useState<NFTAsset[]>([])
-const [loading, setLoading] = useState(true)
-
+  const [questCoinBalance, setQuestCoinBalance] = useState<number>(0)
+  const [isOptedIn, setIsOptedIn] = useState(false)
+  const [optInLoading, setOptInLoading] = useState(false)
+  const [transactionCount, setTransactionCount] = useState(0)
+  const [nfts, setNfts] = useState<NFTAsset[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadWalletAddress()
@@ -92,9 +76,7 @@ const [loading, setLoading] = useState(true)
       }
 
       try {
-        // Convert mnemonic to secret key and get address
         const account = algosdk.mnemonicToSecretKey(mnemonic)
-        // Ensure we're getting the address as a string
         if (account && account.addr) {
           const address = account.addr.toString()
           setPublicAddress(address)
@@ -123,69 +105,6 @@ const [loading, setLoading] = useState(true)
     }
   }
 
-
-
-  const handleOptIn = async () => {
-    try {
-      setOptInLoading(true)
-      const mnemonic = await SecureStore.getItemAsync("mnemonic")
-      if (!mnemonic) {
-        Alert.alert("Error", "No mnemonic found")
-        return
-      }
-
-      const account = algosdk.mnemonicToSecretKey(mnemonic)
-      const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
-      const assetID = '734399300'
-
-      const suggestedParams = await algodClient.getTransactionParams().do()
-      const optInTxn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
-        sender: account.addr,
-        receiver: account.addr,
-        assetIndex: Number(assetID),
-        amount: 0,
-        suggestedParams,
-      })
-
-      const signedTxn = optInTxn.signTxn(account.sk)
-      const { txid } = await algodClient.sendRawTransaction(signedTxn).do()
-      
-      await algosdk.waitForConfirmation(algodClient, txid, 4)
-      
-      // Refresh balances after opt-in
-      await getAlgoBalance(publicAddress)
-      Alert.alert("Success", "Successfully opted in to Quest Coins!")
-      setIsOptedIn(true)
-    } catch (error) {
-      console.error("Error opting in:", error)
-      Alert.alert("Error", "Failed to opt in to Quest Coins")
-    } finally {
-      setOptInLoading(false)
-    }
-  }
-
-  const checkOptInStatus = async (accountInfo: any) => {
-    try {
-      const assets = accountInfo['assets'] || []
-      
-      const isOptedIn = assets.some((asset: any) => {
-        const assetIdString = asset['assetId'].toString();
-        return assetIdString === QUEST_COIN_ASSET_ID
-      })
-      setIsOptedIn(isOptedIn)
-      console.log(isOptedIn)
-      if (isOptedIn) {
-        const questAsset = assets.find((asset: any) => {
-          const assetIdString = asset['assetId'].toString();
-          return assetIdString === QUEST_COIN_ASSET_ID
-        })
-        setQuestCoinBalance(questAsset ? questAsset.amount.toString() : 0)
-        
-      }
-    } catch (error) {
-      console.error("Error checking opt-in status:", error)
-    }
-  }
   const getAlgoBalance = async (address: string) => {
     try {
       setLoading(true)
@@ -207,9 +126,11 @@ const [loading, setLoading] = useState(true)
           // Check if it's an NFT (total supply of 1 and unit name is "NFT")
           if (assetInfo.params.total === 1n && assetInfo.params.unitName === "NFT") {
             let imageUrl = ""
-            if (assetInfo.params.url && assetInfo.params.url.startsWith("ipfs://")) {
-              const ipfsHash = assetInfo.params.url.replace("ipfs://", "")
-              imageUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`
+            if (assetInfo.params.url) {
+              const workingUrl = await tryLoadImage(assetInfo.params.url)
+              if (workingUrl) {
+                imageUrl = workingUrl
+              }
             }
 
             return {
@@ -233,6 +154,65 @@ const [loading, setLoading] = useState(true)
       console.error("Error fetching account information:", error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleOptIn = async () => {
+    try {
+      setOptInLoading(true)
+      const mnemonic = await SecureStore.getItemAsync("mnemonic")
+      if (!mnemonic) {
+        Alert.alert("Error", "No mnemonic found")
+        return
+      }
+
+      const account = algosdk.mnemonicToSecretKey(mnemonic)
+      const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
+
+      const suggestedParams = await algodClient.getTransactionParams().do()
+      const optInTxn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+        sender: account.addr,
+        receiver: account.addr,
+        assetIndex: Number(QUEST_COIN_ASSET_ID),
+        amount: 0,
+        suggestedParams,
+      })
+
+      const signedTxn = optInTxn.signTxn(account.sk)
+      const { txid } = await algodClient.sendRawTransaction(signedTxn).do()
+
+      await algosdk.waitForConfirmation(algodClient, txid, 4)
+
+      await getAlgoBalance(publicAddress)
+      Alert.alert("Success", "Successfully opted in to Quest Coins!")
+      setIsOptedIn(true)
+    } catch (error) {
+      console.error("Error opting in:", error)
+      Alert.alert("Error", "Failed to opt in to Quest Coins")
+    } finally {
+      setOptInLoading(false)
+    }
+  }
+
+  const checkOptInStatus = async (accountInfo: any) => {
+    try {
+      const assets = accountInfo["assets"] || []
+
+      const isOptedIn = assets.some((asset: any) => {
+        const assetIdString = asset["assetId"].toString()
+        return assetIdString === QUEST_COIN_ASSET_ID
+      })
+      setIsOptedIn(isOptedIn)
+
+      if (isOptedIn) {
+        const questAsset = assets.find((asset: any) => {
+          const assetIdString = asset["assetId"].toString()
+          return assetIdString === QUEST_COIN_ASSET_ID
+        })
+        setQuestCoinBalance(questAsset ? Number(questAsset.amount.toString()) : 0)
+      }
+    } catch (error) {
+      console.error("Error checking opt-in status:", error)
     }
   }
 
@@ -266,9 +246,12 @@ const [loading, setLoading] = useState(true)
       setTimeout(() => setCopied(false), 2000)
     }
   }
-useEffect(() => {
-    fetchTransactionCount()
-  }, [])
+
+  useEffect(() => {
+    if (publicAddress) {
+      fetchTransactionCount()
+    }
+  }, [publicAddress])
 
   const fetchTransactionCount = async () => {
     if (!publicAddress) return
@@ -280,12 +263,28 @@ useEffect(() => {
       console.error("Error fetching transaction count:", error)
     }
   }
-  // Format address for display
-  // const formatAddress = (address: string) => {
-  //   if (!address) return "Loading..."
-  //   if (address.length <= 12) return address
-  //   return `${address.slice(0, 6)}...${address.slice(-6)}`
-  // }
+
+  const tryLoadImage = async (url: string): Promise<string | null> => {
+    try {
+      if (url.startsWith("ipfs://")) {
+        const ipfsHash = url.replace("ipfs://", "")
+        const imageUrl = `https://ipfs.io/ipfs/${ipfsHash}`
+        const response = await fetch(imageUrl)
+        if (response.ok) {
+          return imageUrl
+        }
+      } else {
+        const response = await fetch(url)
+        if (response.ok) {
+          return url
+        }
+      }
+      return null
+    } catch (error) {
+      console.error("Error trying to load image:", error)
+      return null
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -295,7 +294,7 @@ useEffect(() => {
         scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ffffff" />}
       >
-        {/* Balance Cards */}
+        {/* Balance Card */}
         <Animated.View entering={FadeInDown.delay(200)} style={[styles.header, headerStyle]}>
           <BlurView intensity={40} tint="dark" style={styles.balanceCard}>
             <View style={styles.balanceHeader}>
@@ -313,11 +312,19 @@ useEffect(() => {
               <Text style={styles.dispenserHighlight}>Head to Algorand Dispenser</Text>
             </TouchableOpacity>
 
+            {/* QR Code */}
+            {publicAddress && (
+              <View style={styles.qrCodeContainer}>
+                <QRCode value={publicAddress} size={150} color="#ffffff" backgroundColor="transparent" />
+                <Text style={styles.qrCodeText}>Scan to get my wallet address</Text>
+              </View>
+            )}
+
             <View style={styles.addressSection}>
               <Text style={styles.addressLabel}>Wallet Address</Text>
               <View style={styles.addressContainer}>
                 <Text style={styles.address} numberOfLines={1}>
-                  {(publicAddress)}
+                  {publicAddress}
                 </Text>
                 <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
                   {copied ? <Check size={16} color="#4ADE80" /> : <Copy size={16} color="#ffffff" />}
@@ -330,14 +337,12 @@ useEffect(() => {
                 <ArrowDown size={20} color="#ffffff" />
                 <Text style={styles.actionButtonText}>Receive</Text>
               </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.actionButton}
-                  onPress={() => router.push("/send")}
-                >
+              <TouchableOpacity style={styles.actionButton} onPress={() => router.push("/send")}>
                 <Send size={20} color="#ffffff" />
                 <Text style={styles.actionButtonText}>Send</Text>
               </TouchableOpacity>
             </View>
+
             <View style={styles.transactionSection}>
               <View style={styles.transactionCount}>
                 <Text style={styles.transactionLabel}>Total Transactions</Text>
@@ -346,20 +351,19 @@ useEffect(() => {
               <TouchableOpacity style={styles.viewTransactionsButton} onPress={() => router.push("/transactions")}>
                 <History size={20} color="#ffffff" />
                 <Text style={styles.viewTransactionsText}>View Transactions</Text>
-                </TouchableOpacity>
-                </View>
+              </TouchableOpacity>
+            </View>
           </BlurView>
-          
         </Animated.View>
 
-
+        {/* Quest Coins Card */}
         <Animated.View entering={FadeInDown.delay(300)} style={styles.header}>
           <BlurView intensity={40} tint="dark" style={styles.balanceCard}>
             <View style={styles.balanceHeader}>
               <Coins size={24} color="#ffffff" />
               <Text style={styles.balanceLabel}>Quest Coins</Text>
             </View>
-            
+
             {isOptedIn ? (
               <>
                 <Text style={styles.balanceAmount}>{questCoinBalance} Q</Text>
@@ -371,13 +375,12 @@ useEffect(() => {
                 onPress={handleOptIn}
                 disabled={optInLoading}
               >
-                <Text style={styles.optInButtonText}>
-                  {optInLoading ? "Opting In..." : "Opt In to Quest Coins"}
-                </Text>
+                <Text style={styles.optInButtonText}>{optInLoading ? "Opting In..." : "Opt In to Quest Coins"}</Text>
               </TouchableOpacity>
             )}
           </BlurView>
         </Animated.View>
+
         {/* NFT Gallery */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>NFT Gallery</Text>
@@ -396,13 +399,19 @@ useEffect(() => {
                     }
                   >
                     <BlurView intensity={40} tint="dark" style={styles.nftCardContent}>
-                      {nft.image ? (
-                        <Image source={{ uri: nft.image }} style={styles.nftImage} />
-                      ) : (
-                        <View style={[styles.nftImage, styles.nftImagePlaceholder]} />
-                      )}
+                      <View style={styles.nftImageContainer}>
+                        {nft.image ? (
+                          <Image source={{ uri: nft.image }} style={styles.nftImage} resizeMode="cover" />
+                        ) : (
+                          <View style={[styles.nftImage, styles.nftImagePlaceholder]}>
+                            <Text style={styles.placeholderText}>No Image</Text>
+                          </View>
+                        )}
+                      </View>
                       <View style={styles.nftInfo}>
-                        <Text style={styles.nftName}>{nft.name}</Text>
+                        <Text style={styles.nftName} numberOfLines={1}>
+                          {nft.name}
+                        </Text>
                         <Text style={styles.nftUnitName}>{nft.unitName}</Text>
                       </View>
                     </BlurView>
@@ -460,6 +469,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 16,
   },
+  qrCodeContainer: {
+    alignItems: "center",
+    marginVertical: 20,
+    padding: 16,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  qrCodeText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
+    marginTop: 12,
+  },
   addressSection: {
     marginBottom: 16,
   },
@@ -513,31 +536,67 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   nftGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 16,
   },
   nftCard: {
     width: NFT_SIZE,
-
     borderRadius: 16,
     overflow: "hidden",
   },
   nftCardContent: {
-    padding: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 16,
+    overflow: "hidden",
+  },
+  nftImageContainer: {
+    width: "100%",
+    aspectRatio: 1,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: "hidden",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  },
+  nftImage: {
+    width: "100%",
+    height: "100%",
+  },
+  nftImagePlaceholder: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  },
+  placeholderText: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 14,
+    textAlign: "center",
   },
   nftInfo: {
+    padding: 12,
     gap: 4,
   },
   nftName: {
     color: "#ffffff",
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
   },
-  nftRarity: {
+  nftUnitName: {
     color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 14,
+    fontSize: 12,
+  },
+  loadingText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 16,
+    textAlign: "center",
+    width: "100%",
+    marginTop: 20,
+  },
+  emptyText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 16,
+    textAlign: "center",
+    width: "100%",
+    marginTop: 20,
   },
   dispenserButton: {
     backgroundColor: "rgba(124, 58, 237, 0.1)",
@@ -575,11 +634,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  transactionsButtonText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
   transactionSection: {
     marginTop: 20,
     padding: 16,
@@ -611,33 +665,6 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 14,
     fontWeight: "600",
-  },
-  
-  nftImage: {
-    width: "100%",
-    aspectRatio: 1,
-  },
-  nftImagePlaceholder: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-  },
-  
-  nftUnitName: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 12,
-  },
-  loadingText: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 16,
-    textAlign: "center",
-    width: "100%",
-    marginTop: 20,
-  },
-  emptyText: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 16,
-    textAlign: "center",
-    width: "100%",
-    marginTop: 20,
   },
 })
 

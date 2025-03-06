@@ -4,9 +4,9 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, Dimensions 
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import Animated, { FadeIn, SlideInRight, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated"
-import { ArrowLeft, Send, Check, Copy, ExternalLink } from "lucide-react-native"
-import { useState } from "react"
-import { router } from "expo-router"
+import { ArrowLeft, Send, Check, ExternalLink, QrCode } from "lucide-react-native"
+import { useState, useEffect } from "react"
+import { router, useLocalSearchParams } from "expo-router"
 import * as SecureStore from "expo-secure-store"
 import algosdk from "algosdk"
 import { LinearGradient } from "expo-linear-gradient"
@@ -15,6 +15,7 @@ const { width } = Dimensions.get("window")
 const CARD_WIDTH = width - 48
 
 export default function SendScreen() {
+  const params = useLocalSearchParams()
   const [recipientAddress, setRecipientAddress] = useState("")
   const [amount, setAmount] = useState("")
   const [sending, setSending] = useState(false)
@@ -31,6 +32,13 @@ export default function SendScreen() {
   const checkmarkStyle = useAnimatedStyle(() => ({
     transform: [{ scale: checkmarkScale.value }],
   }))
+
+  // Set recipient address from QR scanner if available
+  useEffect(() => {
+    if (params.address && typeof params.address === "string") {
+      setRecipientAddress(params.address)
+    }
+  }, [params.address])
 
   const handleAmountChange = (value: string) => {
     setAmount(value)
@@ -88,6 +96,10 @@ export default function SendScreen() {
     }
   }
 
+  const openQRScanner = () => {
+    router.replace("/qr-scanner")
+  }
+
   const viewTransactionDetails = () => {
     router.push({
       pathname: "/transaction-details",
@@ -133,8 +145,8 @@ export default function SendScreen() {
                   value={recipientAddress}
                   onChangeText={setRecipientAddress}
                 />
-                <TouchableOpacity style={styles.pasteButton}>
-                  <Copy size={16} color="rgba(255, 255, 255, 0.5)" />
+                <TouchableOpacity style={styles.pasteButton} onPress={openQRScanner}>
+                  <QrCode size={16} color="rgba(255, 255, 255, 0.5)" />
                 </TouchableOpacity>
               </View>
             </View>
