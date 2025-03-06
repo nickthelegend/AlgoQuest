@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useEffect } from "react"
 import {
   View,
@@ -65,6 +67,7 @@ export default function MarketplaceScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
 
   useEffect(() => {
     loadListings()
@@ -74,6 +77,19 @@ export default function MarketplaceScreen() {
   const loadWalletAddress = async () => {
     const address = await SecureStore.getItemAsync("walletAddress")
     setWalletAddress(address)
+
+    if (address) {
+      // Get user ID from wallet address
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("wallet_address", address)
+        .single()
+
+      if (!userError && userData) {
+        setUserId(userData.id)
+      }
+    }
   }
 
   const loadListings = async () => {
@@ -150,8 +166,15 @@ export default function MarketplaceScreen() {
   )
 
   const filteredListings = listings.filter((listing) => {
+    // Filter out current user's listings
+    if (userId && listing.seller_id === userId) return false
+
+    // Apply tier filter
     if (selectedTier && listing.metadata.tier !== selectedTier) return false
+
+    // Apply search filter
     if (searchQuery && !listing.metadata.name.toLowerCase().includes(searchQuery.toLowerCase())) return false
+
     return true
   })
 

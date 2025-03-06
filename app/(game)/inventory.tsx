@@ -6,7 +6,19 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
-import { ArrowLeft, Filter, Shield, Sword, Heart, Zap, Tag, ChevronDown, Crown, Star } from "lucide-react-native"
+import {
+  ArrowLeft,
+  Filter,
+  Shield,
+  Sword,
+  Heart,
+  Zap,
+  Tag,
+  ChevronDown,
+  Crown,
+  Star,
+  ShoppingBag,
+} from "lucide-react-native"
 import { router } from "expo-router"
 import { supabase } from "@/lib/supabase"
 import * as SecureStore from "expo-secure-store"
@@ -51,6 +63,8 @@ export default function InventoryScreen() {
   const [beasts, setBeasts] = useState<Beast[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [beastsOnSale, setBeastsOnSale] = useState<number>(0)
 
   useEffect(() => {
     loadBeasts()
@@ -72,6 +86,8 @@ export default function InventoryScreen() {
       if (userError) throw userError
       if (!userData) throw new Error("User not found")
 
+      setUserId(userData.id)
+
       // Get beasts owned by user
       const { data: beastsData, error: beastsError } = await supabase
         .from("beasts")
@@ -80,6 +96,17 @@ export default function InventoryScreen() {
         .order("created_at", { ascending: false })
 
       if (beastsError) throw beastsError
+
+      // Get count of beasts on sale
+      const { data: listingsData, error: listingsError } = await supabase
+        .from("marketplace_listings")
+        .select("id")
+        .eq("seller_id", userData.id)
+        .eq("status", "active")
+
+      if (!listingsError && listingsData) {
+        setBeastsOnSale(listingsData.length)
+      }
 
       setBeasts(beastsData || [])
     } catch (err) {
@@ -176,11 +203,24 @@ export default function InventoryScreen() {
             </View>
             <View style={styles.statItem}>
               <Tag size={24} color="#3B82F6" />
-              <Text style={styles.statValue}>{getForSaleCount()}</Text>
+              <Text style={styles.statValue}>{beastsOnSale}</Text>
               <Text style={styles.statLabel}>For Sale</Text>
             </View>
           </BlurView>
         </Animated.View>
+
+        {/* My Beasts on Sale Section */}
+        {beastsOnSale > 0 && (
+          <Animated.View entering={FadeInDown.delay(350)} style={styles.onSaleSection}>
+            <TouchableOpacity style={styles.onSaleButton} onPress={() => router.push("/user-listing")}>
+              <ShoppingBag size={20} color="#ffffff" />
+              <Text style={styles.onSaleButtonText}>View My Beasts on Sale ({beastsOnSale})</Text>
+              <View style={styles.onSaleBadge}>
+                <Text style={styles.onSaleBadgeText}>{beastsOnSale}</Text>
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
 
         {/* Beast Grid */}
         <View style={styles.beastGrid}>
@@ -251,10 +291,12 @@ export default function InventoryScreen() {
                     {!beast.for_sale && (
                       <TouchableOpacity
                         style={[styles.actionButton, { backgroundColor: "#7C3AED" }]}
-                        onPress={() => router.push({
-                          pathname: "/beast/[id]/sell",
-                          params: { id: beast.id },
-                        })}
+                        onPress={() =>
+                          router.push({
+                            pathname: "/beast/[id]/sell",
+                            params: { id: beast.id },
+                          })
+                        }
                       >
                         <Text style={styles.actionButtonText}>List for Sale</Text>
                       </TouchableOpacity>
@@ -386,6 +428,37 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 14,
     color: "rgba(255, 255, 255, 0.6)",
+  },
+  onSaleSection: {
+    marginBottom: 24,
+  },
+  onSaleButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(124, 58, 237, 0.4)",
+    gap: 8,
+  },
+  onSaleButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  onSaleBadge: {
+    backgroundColor: "#7C3AED",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 8,
+  },
+  onSaleBadgeText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "bold",
   },
   emptyContainer: {
     alignItems: "center",

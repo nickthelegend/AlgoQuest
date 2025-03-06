@@ -106,7 +106,7 @@ export default function SellBeastScreen() {
       };
   
       // Make the API request
-      const response = await fetch('http://172.16.2.136:3000/api/createApp', {
+      const response = await fetch('http://172.16.5.72:3000/api/createApp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
