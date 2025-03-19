@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Alert } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Alert, Platform } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
@@ -9,6 +9,13 @@ import Animated, { FadeInDown } from "react-native-reanimated"
 import { ArrowLeft, Shield, Swords, Crown, Star, Users } from "lucide-react-native"
 import { router } from "expo-router"
 import * as NearbyConnections from "expo-nearby-connections"
+import * as Notifications from "expo-notifications"
+import * as SecureStore from "expo-secure-store"
+import { PERMISSIONS, RESULTS, checkMultiple, requestMultiple } from "react-native-permissions"
+import algosdk from "algosdk"
+
+// Declare __DEV__ if it's not already defined (e.g., in a testing environment)
+declare const __DEV__: boolean
 
 interface Player {
   id: string
@@ -26,52 +33,353 @@ interface Player {
   }
 }
 
-// Dummy player for debugging
-const DUMMY_PLAYER: Player = {
-  id: "dummy-1",
-  name: "Supreme Dragon",
-  rank: 1234,
-  level: 70,
-  winRate: "76%",
-  avatar:
-    "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
-  status: "online",
-  selectedBeast: {
-    name: "Golden Dragon",
-    power: 9500,
-    element: "Light",
-    image: "/placeholder.svg?height=100&width=100",
-  },
+async function checkAndRequestPermissions(): Promise<boolean> {
+  const permissions =
+    Platform.OS === "ios"
+      ? [PERMISSIONS.IOS.BLUETOOTH]
+      : [
+          PERMISSIONS.ANDROID.ACCESS_COARSE_LOCATION,
+          PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION,
+          PERMISSIONS.ANDROID.BLUETOOTH_ADVERTISE,
+          PERMISSIONS.ANDROID.BLUETOOTH_CONNECT,
+          PERMISSIONS.ANDROID.BLUETOOTH_SCAN,
+          PERMISSIONS.ANDROID.NEARBY_WIFI_DEVICES,
+        ]
+
+  try {
+    const statuses = await checkMultiple(permissions)
+    const allGranted = Object.values(statuses).every(
+      (status) => status === RESULTS.GRANTED || status === RESULTS.UNAVAILABLE || status === RESULTS.LIMITED,
+    )
+
+    if (allGranted) return true
+
+    const requestStatuses = await requestMultiple(permissions)
+    return Object.values(requestStatuses).every(
+      (status) => status === RESULTS.GRANTED || status === RESULTS.UNAVAILABLE || status === RESULTS.LIMITED,
+    )
+  } catch (error) {
+    console.error("Error checking permissions:", error)
+    return false
+  }
 }
 
 export default function FindPlayersScreen() {
-  const [players, setPlayers] = useState<Player[]>([DUMMY_PLAYER])
+  const [players, setPlayers] = useState<Player[]>([])
   const [scanning, setScanning] = useState(false)
+  const [permissionsGranted, setPermissionsGranted] = useState(false)
+  const [myPeerId, setMyPeerId] = useState<string>("")
+  const [username, setUsername] = useState<string>("Player")
+  const [walletAddress, setWalletAddress] = useState<string>("")
+  const [connectedPeerId, setConnectedPeerId] = useState<string | null>(null)
+  const [debugInfo, setDebugInfo] = useState<string>("")
 
+  // Set up notification handler
   useEffect(() => {
-    startScanning()
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    })
+
+    // Request notification permissions
+    const requestNotificationPermissions = async () => {
+      const { status } = await Notifications.requestPermissionsAsync()
+      if (status !== "granted") {
+        console.log("Notification permissions not granted")
+      }
+    }
+
+    requestNotificationPermissions()
+  }, [])
+
+  // Initialize permissions and load username and wallet address
+  useEffect(() => {
+    const initializePermissions = async () => {
+      const granted = await checkAndRequestPermissions()
+      setPermissionsGranted(granted)
+      if (granted) {
+        loadUserData()
+      } else {
+        Alert.alert(
+          "Permissions Required",
+          "This feature requires Bluetooth and Location permissions to work properly.",
+        )
+      }
+    }
+
+    initializePermissions()
+
     return () => {
-      stopScanning()
+      if (scanning) {
+        stopScanning()
+      }
     }
   }, [])
 
-  const startScanning = async () => {
+  // Set up NearbyConnections listeners
+  useEffect(() => {
+    if (!permissionsGranted) return
+
+    // Listen for discovered peers
+    const onPeerFoundListener = NearbyConnections.onPeerFound((data) => {
+      console.log("Player found:", data)
+      setDebugInfo((prev) => prev + `\nPeer found: ${JSON.stringify(data)}`)
+
+      setPlayers((prev) => {
+        if (prev.some((player) => player.id === data.peerId)) return prev
+
+        // Create a new player from the discovered peer
+        const newPlayer: Player = {
+          id: data.peerId,
+          name: data.name || "Unknown Player",
+          rank: Math.floor(Math.random() * 2000) + 1,
+          level: Math.floor(Math.random() * 100) + 1,
+          winRate: `${Math.floor(Math.random() * 100)}%`,
+          avatar:
+            "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
+          status: "online",
+          selectedBeast: {
+            name: "Mystery Beast",
+            power: Math.floor(Math.random() * 10000),
+            element: ["Fire", "Water", "Earth", "Air", "Light", "Dark"][Math.floor(Math.random() * 6)],
+            image: "/placeholder.svg?height=100&width=100",
+          },
+        }
+
+        return [...prev, newPlayer]
+      })
+    })
+
+    const onPeerLostListener = NearbyConnections.onPeerLost((data) => {
+      console.log("Player lost:", data)
+      setDebugInfo((prev) => prev + `\nPeer lost: ${JSON.stringify(data)}`)
+      setPlayers((prev) => prev.filter((player) => player.id !== data.peerId))
+    })
+
+    // Listen for battle invitations
+    const onInvitationListener = NearbyConnections.onInvitationReceived((data) => {
+      console.log("Battle invitation received from:", data.name)
+      setDebugInfo((prev) => prev + `\nInvitation received: ${JSON.stringify(data)}`)
+
+      // Schedule a local notification to alert the user
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Battle Challenge",
+          body: `${data.name} wants to battle with you!`,
+        },
+        trigger: null, // sends the notification immediately
+      })
+
+      // Prompt the user to accept or reject the battle
+      Alert.alert(
+        "Battle Challenge",
+        `${data.name} wants to battle with you!`,
+        [
+          {
+            text: "Decline",
+            onPress: () => handleRejectBattle(data.peerId),
+            style: "cancel",
+          },
+          {
+            text: "Accept",
+            onPress: () => handleAcceptBattle(data.peerId),
+          },
+        ],
+        { cancelable: false },
+      )
+    })
+
+    // Listen for connection state changes
+    const onConnectedListener = NearbyConnections.onConnected((data) => {
+      console.log("Connected to:", data)
+      setDebugInfo((prev) => prev + `\nConnected: ${JSON.stringify(data)}`)
+      setConnectedPeerId(data.peerId)
+
+      // If we're connected, we can navigate to the battle arena
+      if (data.name) {
+        Alert.alert("Battle Starting", `Connected with ${data.name}. Prepare for battle!`, [
+          {
+            text: "Let's Go!",
+            onPress: () => router.push("/battle-arena"),
+          },
+        ])
+      }
+    })
+
+    const onDisconnectedListener = NearbyConnections.onDisconnected((data) => {
+      console.log("Disconnected from:", data)
+      setDebugInfo((prev) => prev + `\nDisconnected: ${JSON.stringify(data)}`)
+      setConnectedPeerId(null)
+    })
+
+    return () => {
+      onPeerFoundListener()
+      onPeerLostListener()
+      onInvitationListener()
+      onConnectedListener()
+      onDisconnectedListener()
+    }
+  }, [permissionsGranted])
+
+  const loadUserData = async () => {
     try {
-      setScanning(true)
-      // Start discovering nearby players
-      await NearbyConnections.startDiscovery("battle-beasts")
+      // Load username
+      const storedUsername = await SecureStore.getItemAsync("username")
+      if (storedUsername) {
+        setUsername(storedUsername)
+      }
+
+      // Load wallet address
+      const mnemonic = await SecureStore.getItemAsync("mnemonic")
+      if (mnemonic) {
+        const account = algosdk.mnemonicToSecretKey(mnemonic)
+        const address = account.addr.toString()
+        setWalletAddress(address)
+        console.log("Wallet address loaded:", address)
+        setDebugInfo((prev) => prev + `\nWallet address loaded: ${address}`)
+      } else {
+        console.log("No mnemonic found in secure storage")
+        setDebugInfo((prev) => prev + `\nNo mnemonic found in secure storage`)
+      }
     } catch (error) {
-      console.error("Error starting discovery:", error)
+      console.error("Error loading user data:", error)
+      setDebugInfo((prev) => prev + `\nError loading user data: ${error}`)
+    }
+  }
+
+  const startScanning = async () => {
+    if (!permissionsGranted) {
+      const granted = await checkAndRequestPermissions()
+      if (!granted) {
+        Alert.alert(
+          "Permissions Required",
+          "Please grant the required permissions in your device settings to use this feature.",
+        )
+        return
+      }
+      setPermissionsGranted(granted)
+    }
+
+    if (!walletAddress) {
+      Alert.alert("Error", "Wallet address not found. Please create a wallet first.")
+      return
+    }
+
+    try {
+      // First stop any existing discovery and advertising
+      await stopScanning()
+
+      // Clear debug info
+      setDebugInfo("Starting scan...")
+
+      // Set scanning state to true
+      setScanning(true)
+
+      // Add the current user to the players list for testing
+      const myPlayer: Player = {
+        id: "self-test-id",
+        name: username || "Me (Test)",
+        rank: 999,
+        level: 99,
+        winRate: "100%",
+        avatar:
+          "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
+        status: "online",
+        selectedBeast: {
+          name: "My Beast",
+          power: 9999,
+          element: "Light",
+          image: "/placeholder.svg?height=100&width=100",
+        },
+      }
+
+      setPlayers((prevPlayers) => {
+        // Check if the user is already in the list
+        if (!prevPlayers.some((player) => player.id === "self-test-id")) {
+          return [...prevPlayers, myPlayer]
+        }
+        return prevPlayers
+      })
+
+      // Start advertising with a delay to ensure previous operations are completed
+      setTimeout(async () => {
+        try {
+          console.log("Starting advertising with username:", username)
+          setDebugInfo((prev) => prev + `\nStarting advertising with username: ${username}`)
+
+          // Make sure we have a valid service ID
+          const serviceId = walletAddress.substring(0, 15) // Use first 15 chars of wallet address as service ID
+          setDebugInfo((prev) => prev + `\nUsing service ID: ${serviceId}`)
+
+          const advertisePeerId = await NearbyConnections.startAdvertise(username)
+          setMyPeerId(advertisePeerId)
+          console.log("Started advertising with peerId:", advertisePeerId)
+          setDebugInfo((prev) => prev + `\nStarted advertising with peerId: ${advertisePeerId}`)
+
+          // Start discovery after advertising is successful
+          setTimeout(async () => {
+            try {
+              console.log("Starting discovery with wallet address:", walletAddress)
+              setDebugInfo((prev) => prev + `\nStarting discovery with wallet address: ${walletAddress}`)
+
+              // Use the same service ID for discovery
+              await NearbyConnections.startDiscovery(serviceId)
+              console.log("Discovery started successfully")
+              setDebugInfo((prev) => prev + `\nDiscovery started successfully`)
+            } catch (discoveryError) {
+              console.error("Error starting discovery:", discoveryError)
+              setDebugInfo((prev) => prev + `\nError starting discovery: ${discoveryError}`)
+              // Don't set scanning to false here, as advertising is still running
+            }
+          }, 1000)
+        } catch (advertiseError) {
+          console.error("Error starting advertising:", advertiseError)
+          setDebugInfo((prev) => prev + `\nError starting advertising: ${advertiseError}`)
+          setScanning(false)
+          Alert.alert("Error", "Failed to start advertising. Please try again.")
+        }
+      }, 1000)
+    } catch (error) {
+      console.error("Error in startScanning:", error)
+      setDebugInfo((prev) => prev + `\nError in startScanning: ${error}`)
+      setScanning(false)
       Alert.alert("Error", "Failed to start scanning for players")
     }
   }
 
   const stopScanning = async () => {
     try {
-      await NearbyConnections.stopDiscovery()
+      setDebugInfo((prev) => prev + `\nStopping scanning...`)
+
+      // Stop both advertising and discovery
+      try {
+        await NearbyConnections.stopAdvertise()
+        console.log("Advertising stopped")
+        setDebugInfo((prev) => prev + `\nAdvertising stopped`)
+      } catch (advertiseError) {
+        console.error("Error stopping advertising:", advertiseError)
+        setDebugInfo((prev) => prev + `\nError stopping advertising: ${advertiseError}`)
+      }
+
+      try {
+        await NearbyConnections.stopDiscovery()
+        console.log("Discovery stopped")
+        setDebugInfo((prev) => prev + `\nDiscovery stopped`)
+      } catch (discoveryError) {
+        console.error("Error stopping discovery:", discoveryError)
+        setDebugInfo((prev) => prev + `\nError stopping discovery: ${discoveryError}`)
+      }
+
       setScanning(false)
+
+      // Remove the self-test user when stopping
+      setPlayers((prevPlayers) => prevPlayers.filter((player) => player.id !== "self-test-id"))
     } catch (error) {
-      console.error("Error stopping discovery:", error)
+      console.error("Error in stopScanning:", error)
+      setDebugInfo((prev) => prev + `\nError in stopScanning: ${error}`)
     }
   }
 
@@ -83,13 +391,89 @@ export default function FindPlayersScreen() {
       },
       {
         text: "Challenge",
-        onPress: () => {
-          // Here you would typically send the challenge request
-          // For now, we'll just navigate to the battle arena
-          router.push("/battle-arena")
+        onPress: async () => {
+          try {
+            // Special case for self-testing
+            if (player.id === "self-test-id") {
+              console.log("Self-testing notification...")
+              setDebugInfo((prev) => prev + `\nSelf-testing notification...`)
+
+              // Directly trigger a notification for testing
+              await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: "Battle Challenge",
+                  body: `${username} wants to battle with you!`,
+                },
+                trigger: null, // sends the notification immediately
+              })
+
+              // Show test alert
+              Alert.alert(
+                "Battle Challenge (Test)",
+                `${username} wants to battle with you!`,
+                [
+                  {
+                    text: "Decline",
+                    style: "cancel",
+                  },
+                  {
+                    text: "Accept",
+                    onPress: () => router.push("/battle-arena"),
+                  },
+                ],
+                { cancelable: false },
+              )
+
+              return
+            }
+
+            // Normal flow for other players
+            console.log("Sending challenge to player:", player.id)
+            setDebugInfo((prev) => prev + `\nSending challenge to player: ${player.id}`)
+
+            // Make sure we have a valid connection
+            if (!player.id) {
+              throw new Error("Invalid player ID")
+            }
+
+            // Send battle invitation to the player
+            await NearbyConnections.requestConnection(player.id)
+
+            // Show a toast or alert that the challenge was sent
+            Alert.alert("Challenge Sent", `Challenge sent to ${player.name}. Waiting for response...`)
+          } catch (error) {
+            console.error("Error sending challenge:", error)
+            setDebugInfo((prev) => prev + `\nError sending challenge: ${error}`)
+            Alert.alert("Error", `Failed to send challenge invitation: ${error}`)
+          }
         },
       },
     ])
+  }
+
+  const handleAcceptBattle = async (peerId: string) => {
+    try {
+      setDebugInfo((prev) => prev + `\nAccepting battle from: ${peerId}`)
+      await NearbyConnections.acceptConnection(peerId)
+      setConnectedPeerId(peerId)
+
+      // Navigate to battle arena after accepting
+      router.push("/battle-arena")
+    } catch (error) {
+      console.error("Error accepting battle:", error)
+      setDebugInfo((prev) => prev + `\nError accepting battle: ${error}`)
+      Alert.alert("Error", "Failed to accept battle challenge")
+    }
+  }
+
+  const handleRejectBattle = async (peerId: string) => {
+    try {
+      setDebugInfo((prev) => prev + `\nRejecting battle from: ${peerId}`)
+      await NearbyConnections.rejectConnection(peerId)
+    } catch (error) {
+      console.error("Error rejecting battle:", error)
+      setDebugInfo((prev) => prev + `\nError rejecting battle: ${error}`)
+    }
   }
 
   const getStatusColor = (status: Player["status"]) => {
@@ -101,6 +485,28 @@ export default function FindPlayersScreen() {
       case "offline":
         return "#94A3B8"
     }
+  }
+
+  if (!permissionsGranted) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.permissionContainer}>
+          <Text style={styles.permissionTitle}>Permissions Required</Text>
+          <Text style={styles.permissionText}>
+            This feature requires Bluetooth and Location permissions to work properly.
+          </Text>
+          <TouchableOpacity
+            style={styles.permissionButton}
+            onPress={async () => {
+              const granted = await checkAndRequestPermissions()
+              setPermissionsGranted(granted)
+            }}
+          >
+            <Text style={styles.permissionButtonText}>Grant Permissions</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    )
   }
 
   return (
@@ -130,6 +536,14 @@ export default function FindPlayersScreen() {
         </BlurView>
       </Animated.View>
 
+      {/* Debug Info */}
+      {__DEV__ && (
+        <ScrollView style={styles.debugContainer}>
+          <Text style={styles.debugTitle}>Debug Info:</Text>
+          <Text style={styles.debugText}>{debugInfo}</Text>
+        </ScrollView>
+      )}
+
       {/* Players List */}
       <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
         {players.map((player, index) => (
@@ -148,7 +562,10 @@ export default function FindPlayersScreen() {
                 </View>
 
                 <View style={styles.playerDetails}>
-                  <Text style={styles.playerName}>{player.name}</Text>
+                  <Text style={styles.playerName}>
+                    {player.name}
+                    {player.id === "self-test-id" && " (You)"}
+                  </Text>
 
                   <View style={styles.statsRow}>
                     <View style={styles.statBadge}>
@@ -184,15 +601,37 @@ export default function FindPlayersScreen() {
                     </View>
                   </View>
 
-                  <TouchableOpacity style={styles.challengeButton} onPress={() => handleChallenge(player)}>
+                  <TouchableOpacity
+                    style={[styles.challengeButton, connectedPeerId === player.id && styles.connectedButton]}
+                    onPress={() => handleChallenge(player)}
+                    disabled={connectedPeerId === player.id}
+                  >
                     <Swords size={20} color="#ffffff" />
-                    <Text style={styles.challengeButtonText}>Challenge</Text>
+                    <Text style={styles.challengeButtonText}>
+                      {connectedPeerId === player.id ? "Connected" : "Challenge"}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               )}
             </BlurView>
           </Animated.View>
         ))}
+
+        {players.length === 0 && scanning && (
+          <BlurView intensity={40} tint="dark" style={styles.emptyState}>
+            <LinearGradient colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]} style={StyleSheet.absoluteFill} />
+            <Users size={32} color="rgba(255, 255, 255, 0.3)" />
+            <Text style={styles.emptyStateText}>Searching for nearby players...</Text>
+          </BlurView>
+        )}
+
+        {players.length === 0 && !scanning && (
+          <BlurView intensity={40} tint="dark" style={styles.emptyState}>
+            <LinearGradient colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]} style={StyleSheet.absoluteFill} />
+            <Users size={32} color="rgba(255, 255, 255, 0.3)" />
+            <Text style={styles.emptyStateText}>No players found. Start scanning to discover nearby players.</Text>
+          </BlurView>
+        )}
       </ScrollView>
     </SafeAreaView>
   )
@@ -207,7 +646,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    paddingTop: 20,
+    paddingTop: 60,
   },
   backButton: {
     width: 40,
@@ -371,10 +810,76 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
   },
+  connectedButton: {
+    backgroundColor: "#4ADE80",
+  },
   challengeButtonText: {
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  emptyState: {
+    padding: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    gap: 16,
+  },
+  emptyStateText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 16,
+    textAlign: "center",
+  },
+  permissionContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  permissionTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#ffffff",
+    marginBottom: 16,
+  },
+  permissionText: {
+    fontSize: 16,
+    color: "rgba(255, 255, 255, 0.6)",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  permissionButton: {
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  permissionButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  debugContainer: {
+    maxHeight: 150,
+    margin: 16,
+    marginTop: 0,
+    padding: 12,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  debugTitle: {
+    color: "#F59E0B",
+    fontSize: 14,
+    fontWeight: "bold",
+    marginBottom: 8,
+  },
+  debugText: {
+    color: "#4ADE80",
+    fontFamily: "monospace",
+    fontSize: 12,
   },
 })
 
