@@ -12,7 +12,6 @@ import {
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
-import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
 import { ArrowLeft, Vote, Clock, CheckCircle2, XCircle, AlertCircle, ExternalLink } from "lucide-react-native"
 import { router, useLocalSearchParams } from "expo-router"
@@ -20,6 +19,12 @@ import * as Linking from "expo-linking"
 import algosdk from "algosdk"
 import * as SecureStore from "expo-secure-store"
 
+const METHODS = [
+  new algosdk.ABIMethod({ name: "vote", desc: "", args: [{ type: "uint64", name: "option", desc: "" }], returns: { type: "void", desc: "" } }),
+  new algosdk.ABIMethod({ name: "optInToApplication", desc: "", args: [], returns: { type: "void", desc: "" } }),
+
+];
+  
 export default function VoteDAOScreen() {
   const params = useLocalSearchParams()
   const { id, title, description, address } = params
@@ -101,28 +106,75 @@ export default function VoteDAOScreen() {
     try {
       setVoting(true)
       
-      // In a real implementation, you would:
-      // 1. Get the user's wallet from secure storage
-      // 2. Create and sign a transaction to vote
-      // 3. Submit the transaction to the blockchain
+      // Get the user's wallet from secure storage
+      const mnemonic = await SecureStore.getItemAsync("mnemonic")
+      if (!mnemonic) throw new Error("No mnemonic found")
+      const walletAddress = await SecureStore.getItemAsync("walletAddress")
+      if (!walletAddress) throw new Error("No walletAddress found")
+
+      const account = algosdk.mnemonicToSecretKey(mnemonic)
+      const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
+      const suggestedParams = await algodClient.getTransactionParams().do()
+
+      // Create the atomic transaction composer
+      const atc = new algosdk.AtomicTransactionComposer();
       
-      // Simulate voting delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      // Set vote option: 1 for Yes, 2 for No
+      const voteValue = voteOption === 'yes' ? 1 : 2;
+
       
-      // Simulate successful vote
+
+
+
+
+
+      // Add the method call to vote
+
+      atc.addMethodCall({
+        appID: Number(id),
+        method: METHODS[1], // vote method
+        signer: algosdk.makeBasicAccountTransactionSigner(account),
+        // methodArgs: [Number(voteValue)], // 1 for Yes, 2 for No
+        sender: account.addr,
+        suggestedParams: { ...suggestedParams, fee: Number(30) },
+        onComplete: algosdk.OnApplicationComplete.OptInOC // This is the key addition
+
+      });
+
+      atc.addMethodCall({
+        appID: Number(id),
+        method: METHODS[0], // vote method
+        signer: algosdk.makeBasicAccountTransactionSigner(account),
+        methodArgs: [Number(voteValue)], // 1 for Yes, 2 for No
+        sender: account.addr,
+        suggestedParams: { ...suggestedParams, fee: Number(30) },
+      });
+
+      // Execute the transaction
+      const result = await atc.execute(algodClient, 4);
+      console.log("Transaction executed:", result);
+      
+      // Wait for transaction to be confirmed
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Update the UI with the new vote
       if (voteOption === 'yes') {
-        setYesVotes(prev => prev + 1)
+        setYesVotes(prev => prev + 1);
       } else {
-        setNoVotes(prev => prev + 1)
+        setNoVotes(prev => prev + 1);
       }
       
-      Alert.alert('Success', `You voted ${voteOption} on this proposal!`)
+      // Show success message
+      Alert.alert('Success', `You voted ${voteOption} on this proposal!`);
+      
+      // Refresh the DAO data to get updated vote counts
+      fetchDAOData();
       
     } catch (error) {
-      console.error('Error voting:', error)
-      Alert.alert('Error', 'Failed to submit your vote')
+      console.error('Error voting:', error);
+      Alert.alert('Error', 'Failed to submit your vote');
     } finally {
-      setVoting(false)
+      setVoting(false);
     }
   }
   
@@ -136,155 +188,156 @@ export default function VoteDAOScreen() {
   
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft size={24} color="#ffffff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Proposal Details</Text>
-          <TouchableOpacity style={styles.explorerButton} onPress={openExplorer}>
-            <ExternalLink size={20} color="#ffffff" />
-          </TouchableOpacity>
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <ArrowLeft size={24} color="#ffffff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Proposal Details</Text>
+        <TouchableOpacity style={styles.explorerButton} onPress={openExplorer}>
+          <ExternalLink size={20} color="#ffffff" />
+        </TouchableOpacity>
+      </View>
+      
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#7C3AED" />
+          <Text style={styles.loadingText}>Loading proposal details...</Text>
         </View>
-        
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#7C3AED" />
-            <Text style={styles.loadingText}>Loading proposal details...</Text>
-          </View>
-        ) : (
-          <>
-            <Animated.View entering={FadeInDown.delay(100)}>
-              <BlurView intensity={40} tint="dark" style={styles.proposalCard}>
-                <View style={styles.proposalHeader}>
-                  <Vote size={24} color="#7C3AED" />
-                  <View
+      ) : (
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Animated.View entering={FadeInDown.delay(100)}>
+            <BlurView intensity={40} tint="dark" style={styles.proposalCard}>
+              <View style={styles.proposalHeader}>
+                <Vote size={24} color="#7C3AED" />
+                <View
+                  style={[
+                    styles.statusBadge,
+                    { backgroundColor: hasEnded ? "#6B7280" : "#059669" },
+                  ]}
+                >
+                  <Text style={styles.statusText}>{hasEnded ? "Ended" : "Active"}</Text>
+                </View>
+              </View>
+              
+              <Text style={styles.proposalTitle}>{title}</Text>
+              <Text style={styles.proposalDescription}>{description}</Text>
+              
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>App ID:</Text>
+                <Text style={styles.infoValue}>{id}</Text>
+              </View>
+              
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>App Address:</Text>
+                <Text style={styles.infoValue} numberOfLines={1}>{address}</Text>
+              </View>
+              
+              <View style={styles.timeContainer}>
+                <Clock size={16} color="#94A3B8" />
+                <Text style={styles.timeText}>{timeRemaining}</Text>
+              </View>
+            </BlurView>
+          </Animated.View>
+          
+          <Animated.View entering={FadeInDown.delay(200)}>
+            <Text style={styles.sectionTitle}>Current Results</Text>
+            <BlurView intensity={40} tint="dark" style={styles.resultsCard}>
+              <View style={styles.voteStats}>
+                <Text style={styles.totalVotes}>{totalVotes} total votes</Text>
+              </View>
+              
+              <View style={styles.voteOption}>
+                <View style={styles.voteOptionHeader}>
+                  <CheckCircle2 size={20} color="#10B981" />
+                  <Text style={styles.voteOptionText}>Yes</Text>
+                  <Text style={styles.voteCount}>{yesVotes} votes</Text>
+                </View>
+                <View style={styles.progressBarContainer}>
+                  <View 
                     style={[
-                      styles.statusBadge,
-                      { backgroundColor: hasEnded ? "#6B7280" : "#059669" },
-                    ]}
+                      styles.progressBar, 
+                      styles.yesBar, 
+                      { width: `${yesPercentage}%` }
+                    ]} 
+                  />
+                </View>
+                <Text style={styles.percentage}>{yesPercentage}%</Text>
+              </View>
+              
+              <View style={styles.voteOption}>
+                <View style={styles.voteOptionHeader}>
+                  <XCircle size={20} color="#EF4444" />
+                  <Text style={styles.voteOptionText}>No</Text>
+                  <Text style={styles.voteCount}>{noVotes} votes</Text>
+                </View>
+                <View style={styles.progressBarContainer}>
+                  <View 
+                    style={[
+                      styles.progressBar, 
+                      styles.noBar, 
+                      { width: `${noPercentage}%` }
+                    ]} 
+                  />
+                </View>
+                <Text style={styles.percentage}>{noPercentage}%</Text>
+              </View>
+            </BlurView>
+          </Animated.View>
+          
+          {!hasEnded && (
+            <Animated.View entering={FadeInDown.delay(300)} style={styles.votingSection}>
+              <Text style={styles.sectionTitle}>Cast Your Vote</Text>
+              <BlurView intensity={40} tint="dark" style={styles.votingCard}>
+                <Text style={styles.votingPrompt}>
+                  Vote on this proposal to help shape the future of the DAO
+                </Text>
+                
+                <View style={styles.votingButtons}>
+                  <TouchableOpacity 
+                    style={[styles.voteButton, styles.yesButton]}
+                    onPress={() => handleVote('yes')}
+                    disabled={voting}
                   >
-                    <Text style={styles.statusText}>{hasEnded ? "Ended" : "Active"}</Text>
-                  </View>
+                    {voting ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <>
+                        <CheckCircle2 size={20} color="#ffffff" />
+                        <Text style={styles.voteButtonText}>Vote Yes</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[styles.voteButton, styles.noButton]}
+                    onPress={() => handleVote('no')}
+                    disabled={voting}
+                  >
+                    {voting ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <>
+                        <XCircle size={20} color="#ffffff" />
+                        <Text style={styles.voteButtonText}>Vote No</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
                 </View>
                 
-                <Text style={styles.proposalTitle}>{title}</Text>
-                <Text style={styles.proposalDescription}>{description}</Text>
-                
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>App ID:</Text>
-                  <Text style={styles.infoValue}>{id}</Text>
-                </View>
-                
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>App Address:</Text>
-                  <Text style={styles.infoValue} numberOfLines={1}>{address}</Text>
-                </View>
-                
-                <View style={styles.timeContainer}>
-                  <Clock size={16} color="#94A3B8" />
-                  <Text style={styles.timeText}>{timeRemaining}</Text>
-                </View>
-              </BlurView>
-            </Animated.View>
-            
-            <Animated.View entering={FadeInDown.delay(200)}>
-              <Text style={styles.sectionTitle}>Current Results</Text>
-              <BlurView intensity={40} tint="dark" style={styles.resultsCard}>
-                <View style={styles.voteStats}>
-                  <Text style={styles.totalVotes}>{totalVotes} total votes</Text>
-                </View>
-                
-                <View style={styles.voteOption}>
-                  <View style={styles.voteOptionHeader}>
-                    <CheckCircle2 size={20} color="#10B981" />
-                    <Text style={styles.voteOptionText}>Yes</Text>
-                    <Text style={styles.voteCount}>{yesVotes} votes</Text>
-                  </View>
-                  <View style={styles.progressBarContainer}>
-                    <View 
-                      style={[
-                        styles.progressBar, 
-                        styles.yesBar, 
-                        { width: `${yesPercentage}%` }
-                      ]} 
-                    />
-                  </View>
-                  <Text style={styles.percentage}>{yesPercentage}%</Text>
-                </View>
-                
-                <View style={styles.voteOption}>
-                  <View style={styles.voteOptionHeader}>
-                    <XCircle size={20} color="#EF4444" />
-                    <Text style={styles.voteOptionText}>No</Text>
-                    <Text style={styles.voteCount}>{noVotes} votes</Text>
-                  </View>
-                  <View style={styles.progressBarContainer}>
-                    <View 
-                      style={[
-                        styles.progressBar, 
-                        styles.noBar, 
-                        { width: `${noPercentage}%` }
-                      ]} 
-                    />
-                  </View>
-                  <Text style={styles.percentage}>{noPercentage}%</Text>
-                </View>
-              </BlurView>
-            </Animated.View>
-            
-            {!hasEnded && (
-              <Animated.View entering={FadeInDown.delay(300)} style={styles.votingSection}>
-                <Text style={styles.sectionTitle}>Cast Your Vote</Text>
-                <BlurView intensity={40} tint="dark" style={styles.votingCard}>
-                  <Text style={styles.votingPrompt}>
-                    Vote on this proposal to help shape the future of the DAO
+                <View style={styles.votingNote}>
+                  <AlertCircle size={16} color="#94A3B8" />
+                  <Text style={styles.votingNoteText}>
+                    Your vote will be recorded on the blockchain and cannot be changed
                   </Text>
-                  
-                  <View style={styles.votingButtons}>
-                    <TouchableOpacity 
-                      style={[styles.voteButton, styles.yesButton]}
-                      onPress={() => handleVote('yes')}
-                      disabled={voting}
-                    >
-                      {voting ? (
-                        <ActivityIndicator color="#ffffff" size="small" />
-                      ) : (
-                        <>
-                          <CheckCircle2 size={20} color="#ffffff" />
-                          <Text style={styles.voteButtonText}>Vote Yes</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={[styles.voteButton, styles.noButton]}
-                      onPress={() => handleVote('no')}
-                      disabled={voting}
-                    >
-                      {voting ? (
-                        <ActivityIndicator color="#ffffff" size="small" />
-                      ) : (
-                        <>
-                          <XCircle size={20} color="#ffffff" />
-                          <Text style={styles.voteButtonText}>Vote No</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <View style={styles.votingNote}>
-                    <AlertCircle size={16} color="#94A3B8" />
-                    <Text style={styles.votingNoteText}>
-                      Your vote will be recorded on the blockchain and cannot be changed
-                    </Text>
-                  </View>
-                </BlurView>
-              </Animated.View>
-            )}
-          </>
-        )}
-      </ScrollView>
+                </View>
+              </BlurView>
+            </Animated.View>
+          )}
+        </ScrollView>
+      )}
     </SafeAreaView>
   )
 }
@@ -294,15 +347,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#000000",
   },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 24,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 40,
   },
   headerTitle: {
     fontSize: 24,
@@ -326,6 +381,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   loadingContainer: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 60,
@@ -467,11 +523,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
-    overflow: "hidden",
-  },
-  votingPrompt: {
-    fontSize: 16,
-    color: "#D1D5DB255,255,0.1)",
     overflow: "hidden",
   },
   votingPrompt: {
