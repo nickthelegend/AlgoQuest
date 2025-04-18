@@ -193,7 +193,7 @@ atc.addMethodCall({
   signer: algosdk.makeBasicAccountTransactionSigner(account),
   methodArgs: [assetTransferTxnWithSigner], 
   appForeignAssets:[Number(assetId)],
-  sender: "3FRGAL3WV46LP5H45L267DMCSSUWKQQLT4XFDYKSRIJBOJE6H5XEJMLK3Y",
+  sender: account.addr,
   suggestedParams: { ...suggestedParams, fee: Number(30) },
 });
 atc.addMethodCall({
@@ -201,7 +201,7 @@ atc.addMethodCall({
     method: new algosdk.ABIMethod({ name: "recieveNFT", desc: "", args: [{ type: "uint64", name: "asset", desc: "" }], returns: { type: "void", desc: "" } }), // your ABI method (buyNFT)
     signer: algosdk.makeBasicAccountTransactionSigner(account),
     methodArgs: [Number(assetId)], 
-    sender: "3FRGAL3WV46LP5H45L267DMCSSUWKQQLT4XFDYKSRIJBOJE6H5XEJMLK3Y",
+    sender: account.addr,
     suggestedParams: { ...suggestedParams, fee: Number(30) },
   });
   
