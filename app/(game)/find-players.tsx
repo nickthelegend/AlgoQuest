@@ -307,14 +307,14 @@ export default function FindPlayersScreen() {
       // Start advertising with a delay to ensure previous operations are completed
       setTimeout(async () => {
         try {
-          console.log("Starting advertising with username:", username)
-          setDebugInfo((prev) => prev + `\nStarting advertising with username: ${username}`)
+          console.log("Starting advertising with wallet address:", walletAddress)
+          setDebugInfo((prev) => prev + `\nStarting advertising with wallet address: ${walletAddress}`)
 
           // Make sure we have a valid service ID
           const serviceId = walletAddress.substring(0, 15) // Use first 15 chars of wallet address as service ID
           setDebugInfo((prev) => prev + `\nUsing service ID: ${serviceId}`)
 
-          const advertisePeerId = await NearbyConnections.startAdvertise(username)
+          const advertisePeerId = await NearbyConnections.startAdvertise(walletAddress)
           setMyPeerId(advertisePeerId)
           console.log("Started advertising with peerId:", advertisePeerId)
           setDebugInfo((prev) => prev + `\nStarted advertising with peerId: ${advertisePeerId}`)
@@ -456,6 +456,7 @@ export default function FindPlayersScreen() {
       setDebugInfo((prev) => prev + `\nAccepting battle from: ${peerId}`)
       await NearbyConnections.acceptConnection(peerId)
       setConnectedPeerId(peerId)
+      console.log("Player has accepted")
 
       // Navigate to battle arena after accepting
       router.push("/battle-arena")
@@ -882,4 +883,3 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 })
-
