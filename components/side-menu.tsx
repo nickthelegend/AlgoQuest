@@ -1,9 +1,9 @@
 "use client"
 
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from "react-native"
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Linking } from "react-native"
 import { BlurView } from "expo-blur"
 import Animated, { FadeIn, FadeOut, SlideInLeft, SlideOutLeft } from "react-native-reanimated"
-import { Settings, LogOut, Vote, Trophy, Calendar, Globe, HelpCircle, KeyRound } from "lucide-react-native"
+import { Settings, LogOut, Vote, Trophy, Calendar, Globe, HelpCircle, KeyRound, Gamepad2 } from "lucide-react-native"
 import { Link, type LinkProps } from "expo-router"
 import { LinearGradient } from "expo-linear-gradient"
 
@@ -51,7 +51,6 @@ export default function SideMenu({ visible, onClose }: SideMenuProps) {
 
   return (
     <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.overlay}>
-      
       <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
       <Animated.View entering={SlideInLeft} exiting={SlideOutLeft} style={styles.menuContainer}>
         <BlurView intensity={80} tint="dark" style={styles.menu}>
@@ -73,6 +72,27 @@ export default function SideMenu({ visible, onClose }: SideMenuProps) {
                 ))}
               </View>
             ))}
+          </View>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Other Games</Text>
+            <TouchableOpacity
+              style={styles.gameButton}
+              onPress={() => {
+                // Open external URL
+                Linking.openURL("https://rps.nickthelegend.tech/")
+                onClose()
+              }}
+            >
+              <LinearGradient
+                colors={["#7C3AED", "#4F46E5"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.gameButtonGradient}
+              >
+                <Gamepad2 size={24} color="#ffffff" />
+                <Text style={styles.gameButtonText}>Rock Paper Scissors</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
           <TouchableOpacity style={styles.logoutButton}>
             <LogOut size={24} color="#ffffff" />
@@ -162,5 +182,21 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#ffffff",
   },
+  gameButton: {
+    borderRadius: 12,
+    overflow: "hidden",
+    marginVertical: 8,
+  },
+  gameButtonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    padding: 16,
+    borderRadius: 12,
+  },
+  gameButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#ffffff",
+  },
 })
-
