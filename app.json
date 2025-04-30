@@ -4,7 +4,7 @@
     "slug": "AlgoQuest",
     "version": "1.0.0",
     "orientation": "default",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/quest.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -45,15 +45,6 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
-        }
-      ],
       "expo-secure-store",
       [
         "react-native-permissions",
@@ -87,6 +78,12 @@
             "./assets/notification_sound.wav"
           ],
           "enableBackgroundRemoteNotifications": false
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "fonts": ["./assets/fonts/Audiowide-Regular.ttf"]
         }
       ]
 
