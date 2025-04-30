@@ -22,7 +22,9 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 * [ ] Quests List Out the quests that are active
 * [X] Send Quest Coins to an ID, Qr code should be also avaliable when click , scan qr we can also use camera to scan and send funds to that account
 * [X] DAO Back button , Create new DAO , What to do DAO, options also , yes or No --- Only Front End
-
-
+* [ ] Quest Contract, Quest Contract Signing, Server side quest contract trigger, server side quest contract distribution
+* [ ] Side Bar edit, add RPS , add chess etc, 
+* [ ] Quest Frontend changes
+ 
 
 

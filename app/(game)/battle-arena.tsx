@@ -34,7 +34,7 @@ import {
   Star,
   Trophy,
 } from "lucide-react-native"
-import { router } from "expo-router"
+import { router, useLocalSearchParams } from "expo-router"
 import { createElement } from "react"
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window")
@@ -104,6 +104,10 @@ export default function BattleArenaScreen() {
     height: screenHeight,
   })
 
+  const { beastId } = useLocalSearchParams()
+  const [player1Beast, setPlayer1Beast] = useState<any>(null)
+  const [player2Beast, setPlayer2Beast] = useState<any>(null)
+
   // Animation values
   const player1Health = useSharedValue(100)
   const player2Health = useSharedValue(100)
@@ -171,21 +175,92 @@ export default function BattleArenaScreen() {
     }
   }, [battleStarted, turnTime])
 
+  useEffect(() => {
+    // Fetch the selected beast data
+    const fetchSelectedBeast = async () => {
+      try {
+        // In a real app, you would fetch the beast data from your API or database
+        // For now, we'll simulate fetching the beast with the given ID
+        console.log("Fetching beast with ID:", beastId)
+
+        // Simulate API call
+        // Replace this with your actual API call
+        const mockBeast = {
+          id: beastId,
+          name: "Golden Dragon",
+          level: 70,
+          health: 630781,
+          maxHealth: 630781,
+          energy: 100,
+          maxEnergy: 100,
+          power: 9500,
+          element: "Light",
+          image_url:
+            "https://images.unsplash.com/photo-1577493340887-b7bfff550145?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=800&q=80",
+          stats: {
+            attack: 85,
+            defense: 70,
+            speed: 75,
+            magic: 90,
+          },
+        }
+
+        setPlayer1Beast(mockBeast)
+
+        // Set opponent beast (mock data)
+        setPlayer2Beast({
+          id: "opponent-beast",
+          name: "Dark Phoenix",
+          level: 70,
+          health: 422034,
+          maxHealth: 422034,
+          energy: 100,
+          maxEnergy: 100,
+          power: 8900,
+          element: "Dark",
+          image_url:
+            "https://images.unsplash.com/photo-1590955559496-50316bd28ff2?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=800&q=80",
+          stats: {
+            attack: 80,
+            defense: 65,
+            speed: 95,
+            magic: 85,
+          },
+        })
+      } catch (error) {
+        console.error("Error fetching beast data:", error)
+      }
+    }
+
+    if (beastId) {
+      fetchSelectedBeast()
+    }
+  }, [beastId])
+
+  useEffect(() => {
+    if (player1Beast?.image_url) {
+      console.log("Player 1 Beast Image URL:", player1Beast.image_url)
+    }
+    if (player2Beast?.image_url) {
+      console.log("Player 2 Beast Image URL:", player2Beast.image_url)
+    }
+  }, [player1Beast, player2Beast])
+
   // Mock player data with enhanced moves
   const player1: Player = {
     name: "Supreme",
     rank: 1234,
     beast: {
-      name: "Golden Dragon",
-      level: 70,
-      health: 630781,
-      maxHealth: 630781,
-      energy: 100,
-      maxEnergy: 100,
-      power: 9500,
-      element: "Light",
-      image: "/placeholder.svg?height=200&width=200",
-      stats: {
+      name: player1Beast?.name || "Golden Dragon",
+      level: player1Beast?.level || 70,
+      health: player1Beast?.health || 630781,
+      maxHealth: player1Beast?.maxHealth || 630781,
+      energy: player1Beast?.energy || 100,
+      maxEnergy: player1Beast?.maxEnergy || 100,
+      power: player1Beast?.power || 9500,
+      element: player1Beast?.element || "Light",
+      image: player1Beast?.image_url || "/placeholder.svg?height=200&width=200",
+      stats: player1Beast?.stats || {
         attack: 85,
         defense: 70,
         speed: 75,
@@ -244,16 +319,16 @@ export default function BattleArenaScreen() {
     name: "Huynh Tan Vui",
     rank: 1100,
     beast: {
-      name: "Dark Phoenix",
-      level: 70,
-      health: 422034,
-      maxHealth: 422034,
-      energy: 100,
-      maxEnergy: 100,
-      power: 8900,
-      element: "Dark",
-      image: "/placeholder.svg?height=200&width=200",
-      stats: {
+      name: player2Beast?.name || "Dark Phoenix",
+      level: player2Beast?.level || 70,
+      health: player2Beast?.health || 422034,
+      maxHealth: player2Beast?.maxHealth || 422034,
+      energy: player2Beast?.energy || 100,
+      maxEnergy: player2Beast?.maxEnergy || 100,
+      power: player2Beast?.power || 8900,
+      element: player2Beast?.element || "Dark",
+      image: player2Beast?.image_url || "/placeholder.svg?height=200&width=200",
+      stats: player2Beast?.stats || {
         attack: 80,
         defense: 65,
         speed: 95,
@@ -530,7 +605,12 @@ export default function BattleArenaScreen() {
               start={{ x: 0.5, y: 0 }}
               end={{ x: 0.5, y: 1 }}
             />
-            <Image source={{ uri: player2.beast.image }} style={styles.beastImage} />
+            <Image
+              source={{ uri: player2.beast.image }}
+              style={styles.beastImage}
+              resizeMode="contain"
+              onError={(e) => console.log("Error loading enemy beast image:", e.nativeEvent.error)}
+            />
           </Animated.View>
 
           {/* Player Beast */}
@@ -545,7 +625,12 @@ export default function BattleArenaScreen() {
               start={{ x: 0.5, y: 0 }}
               end={{ x: 0.5, y: 1 }}
             />
-            <Image source={{ uri: player1.beast.image }} style={styles.beastImage} />
+            <Image
+              source={{ uri: player1.beast.image }}
+              style={styles.beastImage}
+              resizeMode="contain"
+              onError={(e) => console.log("Error loading player beast image:", e.nativeEvent.error)}
+            />
           </Animated.View>
         </View>
 
@@ -875,6 +960,8 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     resizeMode: "contain",
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
+    borderRadius: 10,
   },
   battleLog: {
     position: "absolute",
@@ -1035,4 +1122,3 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 })
-
