@@ -187,7 +187,7 @@ export default function CreateWalletScreen() {
       headers: {
         accept: "application/json",
         "content-type": "application/json",
-        authorization: "Bearer a555dbd37d35a11f45a8072266ec2ad2be13292f4d626639b6e045d895889521",
+        authorization: "Bearer af0955d8aa9129a65af2bea8a3a06fb34ba3670d61409a2a21b0eedff2bc41ce",
       },
       body: JSON.stringify({
         model: "black-forest-labs/FLUX.1-schnell-Free",
@@ -594,6 +594,13 @@ export default function CreateWalletScreen() {
           {step === "avatar" && renderAvatarStep()}
           {step === "mnemonic" && renderMnemonicStep()}
         </Animated.View>
+        {/* Already have a wallet section */}
+        <View style={styles.existingWalletContainer}>
+          <Text style={styles.existingWalletText}>Already have a wallet?</Text>
+          <TouchableOpacity onPress={() => router.push("/wallet-backup")}>
+            <Text style={styles.existingWalletLink}>Restore from recovery phrase</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
       {/* Custom Interest Modal */}
@@ -940,5 +947,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  existingWalletContainer: {
+    marginTop: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  existingWalletText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
+  },
+  existingWalletLink: {
+    color: "#7C3AED",
+    fontSize: 14,
+    fontWeight: "600",
+  },
 })
-
