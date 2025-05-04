@@ -173,7 +173,7 @@ export default function CreateWalletScreen() {
 
     setIsGeneratingAvatar(true)
 
-    // Construct a prompt based on gender and interests
+    // Construct a prompt based on gender and interest
     const genderTerm = formData.gender === "male" ? "male character" : "female character"
     const interestsText =
       formData.interests.length > 0 ? `interested in ${formData.interests.slice(0, 3).join(", ")}` : ""
