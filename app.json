@@ -22,10 +22,6 @@
         "ACCESS_NETWORK_STATE"
       ]
       },
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
       "package": "com.nickthelegend.AlgoQuest",
       "permissions": [ 
         "INTERNET",
