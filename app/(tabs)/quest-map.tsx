@@ -11,14 +11,21 @@ import {
   Dimensions,
   ScrollView,
   Image,
-  TextInput,
   ActivityIndicator,
+  FlatList,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { Trophy, MapPin, Timer, Coins, Search, Filter, ArrowLeft } from "lucide-react-native"
+import { Trophy, MapPin, Timer, Coins, Filter, Plus, Map, Sparkles } from "lucide-react-native"
 import { LinearGradient } from "expo-linear-gradient"
-import { BlurView } from "expo-blur"
-import Animated, { SlideInUp } from "react-native-reanimated"
+import Animated, {
+  SlideInUp,
+  FadeIn,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated"
 import { router } from "expo-router"
 import { supabase } from "@/lib/supabase"
 
@@ -54,11 +61,24 @@ export default function QuestMapScreen() {
   const [quests, setQuests] = useState<Quest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
+  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "completed" | "expired">("all")
+
+  const sparkleAnim = useSharedValue(0)
 
   useEffect(() => {
     fetchQuests()
+
+    // Start sparkle animation
+    sparkleAnim.value = withRepeat(
+      withSequence(withTiming(1, { duration: 1500 }), withTiming(0, { duration: 1500 })),
+      -1,
+      true,
+    )
   }, [])
+
+  const sparkleStyle = useAnimatedStyle(() => ({
+    opacity: sparkleAnim.value,
+  }))
 
   const fetchQuests = async () => {
     try {
@@ -118,102 +138,181 @@ export default function QuestMapScreen() {
 
   // Memoize filtered quests to prevent unnecessary recalculations
   const filteredQuests = useMemo(() => {
-    const query = searchQuery.toLowerCase()
-    return quests.filter((quest) => {
-      const questName = (quest.quest_name || "").toLowerCase()
-      const locationTitle = (quest.location_title || "").toLowerCase()
-      return questName.includes(query) || locationTitle.includes(query)
-    })
-  }, [quests, searchQuery])
+    if (activeFilter === "all") return quests
+    return quests.filter((quest) => quest.quest_status === activeFilter)
+  }, [quests, activeFilter])
 
   const QuestCard = React.memo(({ quest, index }: { quest: Quest; index: number }) => (
-    <Animated.View entering={SlideInUp.delay(index * 100)} style={styles.questCard}>
-      <TouchableOpacity style={styles.questCardContent} onPress={() => router.push(`/qmap?quest_id=${quest.quest_id}`)}>
-        <BlurView intensity={40} tint="dark" style={styles.cardBlur}>
-          <LinearGradient colors={["rgba(124, 58, 237, 0.2)", "rgba(0, 0, 0, 0)"]} style={StyleSheet.absoluteFill} />
-          <View style={styles.questImageContainer}>
-            <Image
-              source={{ uri: quest.quest_image || "/placeholder.svg?height=150&width=150" }}
-              style={styles.questImage}
-            />
-            <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(quest.quest_status)}20` }]}>
-              <Text style={[styles.statusText, { color: getStatusColor(quest.quest_status) }]}>
-                {quest.quest_status.charAt(0).toUpperCase() + quest.quest_status.slice(1)}
-              </Text>
+    <Animated.View entering={SlideInUp.delay(index * 100).springify()} style={styles.questCard}>
+      <TouchableOpacity
+        style={styles.questCardContent}
+        onPress={() => router.push(`/qmap?quest_id=${quest.quest_id}`)}
+        activeOpacity={0.9}
+      >
+        <LinearGradient
+          colors={[`${getStatusColor(quest.quest_status)}20`, "rgba(0, 0, 0, 0.5)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.questImageContainer}>
+          <Image
+            source={{
+              uri:
+                quest.quest_image ||
+                "https://images.unsplash.com/photo-1519389950473-47ba0277781c?q=80&w=2940&auto=format&fit=crop",
+            }}
+            style={styles.questImage}
+          />
+          <LinearGradient colors={["transparent", "rgba(0, 0, 0, 0.7)"]} style={styles.questImageOverlay} />
+          <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(quest.quest_status)}30` }]}>
+            <Text style={[styles.statusText, { color: getStatusColor(quest.quest_status) }]}>
+              {quest.quest_status.charAt(0).toUpperCase() + quest.quest_status.slice(1)}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.questInfo}>
+          <Text style={styles.questName} numberOfLines={1}>
+            {quest.quest_name || "Untitled Quest"}
+          </Text>
+          <Text style={styles.locationText} numberOfLines={1}>
+            {quest.location_title || "Unknown Location"}
+          </Text>
+
+          <View style={styles.questMetrics}>
+            <View style={styles.metric}>
+              <Timer size={14} color="#ffffff" />
+              <Text style={styles.metricText}>{getTimeRemaining(quest.expiry_date)}</Text>
+            </View>
+            <View style={styles.metric}>
+              <Coins size={14} color="#ffffff" />
+              <Text style={styles.metricText}>{quest.rewards.tokens} $CAMP</Text>
             </View>
           </View>
-
-          <View style={styles.questInfo}>
-            <Text style={styles.questName} numberOfLines={1}>
-              {quest.quest_name || "Untitled Quest"}
-            </Text>
-            <Text style={styles.locationText} numberOfLines={1}>
-              {quest.location_title || "Unknown Location"}
-            </Text>
-
-            <View style={styles.questMetrics}>
-              <View style={styles.metric}>
-                <Timer size={14} color="#7C3AED" />
-                <Text style={styles.metricText}>{getTimeRemaining(quest.expiry_date)}</Text>
-              </View>
-              <View style={styles.metric}>
-                <Coins size={14} color="#7C3AED" />
-                <Text style={styles.metricText}>{quest.rewards.tokens} $CAMP</Text>
-              </View>
-            </View>
-          </View>
-        </BlurView>
+        </View>
       </TouchableOpacity>
     </Animated.View>
   ))
 
   const Stats = React.memo(() => (
-    <View style={styles.statsContainer}>
-      <View style={styles.statCard}>
-        <Trophy size={24} color="#7C3AED" />
-        <Text style={styles.statValue}>{quests.filter((q) => q.quest_status === "active").length}</Text>
-        <Text style={styles.statLabel}>Active Quests</Text>
+    <Animated.View entering={FadeIn.delay(200).springify()} style={styles.statsContainer}>
+      <LinearGradient
+        colors={["rgba(124, 58, 237, 0.2)", "rgba(124, 58, 237, 0.05)"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.statsGradient}
+      >
+        <View style={styles.statItem}>
+          <View style={[styles.statIconContainer, { backgroundColor: "rgba(124, 58, 237, 0.3)" }]}>
+            <Trophy size={20} color="#7C3AED" />
+          </View>
+          <View>
+            <Text style={styles.statValue}>{quests.filter((q) => q.quest_status === "active").length}</Text>
+            <Text style={styles.statLabel}>Active</Text>
+          </View>
+        </View>
+
+        <View style={styles.statDivider} />
+
+        <View style={styles.statItem}>
+          <View style={[styles.statIconContainer, { backgroundColor: "rgba(59, 130, 246, 0.3)" }]}>
+            <MapPin size={20} color="#3B82F6" />
+          </View>
+          <View>
+            <Text style={styles.statValue}>{quests.filter((q) => q.quest_status === "completed").length}</Text>
+            <Text style={styles.statLabel}>Completed</Text>
+          </View>
+        </View>
+
+        <View style={styles.statDivider} />
+
+        <View style={styles.statItem}>
+          <View style={[styles.statIconContainer, { backgroundColor: "rgba(16, 185, 129, 0.3)" }]}>
+            <Timer size={20} color="#10B981" />
+          </View>
+          <View>
+            <Text style={styles.statValue}>{quests.filter((q) => q.quest_status === "expired").length}</Text>
+            <Text style={styles.statLabel}>Expired</Text>
+          </View>
+        </View>
+      </LinearGradient>
+    </Animated.View>
+  ))
+
+  const FilterTabs = React.memo(() => (
+    <Animated.View entering={FadeIn.delay(300).springify()} style={styles.filterTabsContainer}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterTabs}>
+        <TouchableOpacity
+          style={[styles.filterTab, activeFilter === "all" && styles.filterTabActive]}
+          onPress={() => setActiveFilter("all")}
+        >
+          <Text style={[styles.filterTabText, activeFilter === "all" && styles.filterTabTextActive]}>All</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterTab, activeFilter === "active" && styles.filterTabActive]}
+          onPress={() => setActiveFilter("active")}
+        >
+          <Text style={[styles.filterTabText, activeFilter === "active" && styles.filterTabTextActive]}>Active</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterTab, activeFilter === "completed" && styles.filterTabActive]}
+          onPress={() => setActiveFilter("completed")}
+        >
+          <Text style={[styles.filterTabText, activeFilter === "completed" && styles.filterTabTextActive]}>
+            Completed
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterTab, activeFilter === "expired" && styles.filterTabActive]}
+          onPress={() => setActiveFilter("expired")}
+        >
+          <Text style={[styles.filterTabText, activeFilter === "expired" && styles.filterTabTextActive]}>Expired</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      <TouchableOpacity style={styles.filterButton}>
+        <Filter size={20} color="#ffffff" />
+      </TouchableOpacity>
+    </Animated.View>
+  ))
+
+  const EmptyState = React.memo(() => (
+    <Animated.View entering={FadeIn.delay(400).springify()} style={styles.emptyContainer}>
+      <View style={styles.emptyIconContainer}>
+        <Map size={40} color="#7C3AED" />
+        <Animated.View style={[styles.emptySparkle, sparkleStyle]}>
+          <Sparkles size={20} color="#7C3AED" />
+        </Animated.View>
       </View>
-      <View style={styles.statCard}>
-        <MapPin size={24} color="#3B82F6" />
-        <Text style={styles.statValue}>{quests.filter((q) => q.quest_status === "completed").length}</Text>
-        <Text style={styles.statLabel}>Completed</Text>
-      </View>
-      <View style={styles.statCard}>
-        <Timer size={24} color="#10B981" />
-        <Text style={styles.statValue}>{quests.filter((q) => q.quest_status === "expired").length}</Text>
-        <Text style={styles.statLabel}>Expired</Text>
-      </View>
-    </View>
+      <Text style={styles.emptyTitle}>No quests found</Text>
+      <Text style={styles.emptyText}>
+        {activeFilter === "all" ? "Start by creating your first quest" : `No ${activeFilter} quests available`}
+      </Text>
+      <TouchableOpacity style={styles.emptyButton}>
+        <Text style={styles.emptyButtonText}>Create Quest</Text>
+      </TouchableOpacity>
+    </Animated.View>
   ))
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#ffffff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Quest Map</Text>
-        <View style={styles.headerRight} />
-      </View>
+      <LinearGradient colors={["#0F0F0F", "#000000"]} style={StyleSheet.absoluteFillObject} />
 
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <Search size={20} color="rgba(255, 255, 255, 0.6)" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search quests..."
-            placeholderTextColor="rgba(255, 255, 255, 0.6)"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+      <View style={styles.header}>
+        <View style={styles.headerContent}>
+          <Animated.View entering={FadeIn.delay(100)} style={styles.mapIconContainer}>
+            <Map size={24} color="#7C3AED" />
+            <Animated.View style={[styles.mapSparkle, sparkleStyle]}>
+              <Sparkles size={12} color="#7C3AED" />
+            </Animated.View>
+          </Animated.View>
         </View>
-        <TouchableOpacity style={styles.filterButton}>
-          <Filter size={20} color="#ffffff" />
-        </TouchableOpacity>
       </View>
 
       <Stats />
+
+      <FilterTabs />
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -227,17 +326,26 @@ export default function QuestMapScreen() {
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
+      ) : filteredQuests.length === 0 ? (
+        <EmptyState />
       ) : (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.questGrid}
+        <FlatList
+          data={filteredQuests}
+          keyExtractor={(item) => item.quest_id}
+          numColumns={2}
+          columnWrapperStyle={styles.questGrid}
+          contentContainerStyle={styles.questList}
           showsVerticalScrollIndicator={false}
-        >
-          {filteredQuests.map((quest, index) => (
-            <QuestCard key={quest.quest_id} quest={quest} index={index} />
-          ))}
-        </ScrollView>
+          renderItem={({ item, index }) => <QuestCard quest={item} index={index} />}
+        />
       )}
+
+      {/* Floating Action Button */}
+      <TouchableOpacity style={styles.fab}>
+        <LinearGradient colors={["#7C3AED", "#4F46E5"]} style={styles.fabGradient}>
+          <Plus size={24} color="#ffffff" />
+        </LinearGradient>
+      </TouchableOpacity>
     </SafeAreaView>
   )
 }
@@ -248,113 +356,144 @@ const styles = StyleSheet.create({
     backgroundColor: "#000000",
   },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#ffffff",
-  },
-  headerRight: {
-    width: 40,
-  },
-  searchContainer: {
+  headerContent: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    gap: 12,
-    marginBottom: 16,
+    justifyContent: "center",
   },
-  searchInputContainer: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
-  },
-  searchInput: {
-    flex: 1,
-    color: "#ffffff",
-    fontSize: 16,
-    marginLeft: 8,
-  },
-  filterButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  mapIconContainer: {
+    position: "relative",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  mapSparkle: {
+    position: "absolute",
+    top: 0,
+    right: 0,
   },
   statsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  statCard: {
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    marginHorizontal: 16,
+    marginBottom: 16,
     borderRadius: 16,
-    padding: 12,
-    minWidth: 100,
+    overflow: "hidden",
+  },
+  statsGradient: {
+    flexDirection: "row",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  statItem: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  statIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
   },
   statValue: {
     color: "#ffffff",
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "bold",
-    marginTop: 8,
   },
   statLabel: {
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 12,
-    marginTop: 4,
   },
-  scrollView: {
+  statDivider: {
+    width: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginHorizontal: 8,
+  },
+  filterTabsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  filterTabs: {
+    flexDirection: "row",
     flex: 1,
   },
+  filterTab: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  },
+  filterTabActive: {
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
+  },
+  filterTabText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
+  },
+  filterTabTextActive: {
+    color: "#7C3AED",
+    fontWeight: "600",
+  },
+  filterButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  questList: {
+    paddingHorizontal: 16,
+    paddingBottom: 100,
+  },
   questGrid: {
-    padding: 16,
-    gap: 16,
-    flexDirection: "row",
-    flexWrap: "wrap",
     justifyContent: "space-between",
+    marginBottom: 16,
   },
   questCard: {
     width: CARD_WIDTH,
-    marginBottom: 16,
+    borderRadius: 16,
+    overflow: "hidden",
+    elevation: 5,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
   questCardContent: {
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  cardBlur: {
-    overflow: "hidden",
+    backgroundColor: "rgba(30, 30, 30, 0.5)",
   },
   questImageContainer: {
-    height: 150,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    height: 120,
+    position: "relative",
   },
   questImage: {
     width: "100%",
     height: "100%",
     resizeMode: "cover",
+  },
+  questImageOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 40,
   },
   statusBadge: {
     position: "absolute",
@@ -428,5 +567,67 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  emptyContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    position: "relative",
+  },
+  emptySparkle: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+  },
+  emptyTitle: {
+    color: "#ffffff",
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 8,
+  },
+  emptyText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 16,
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  emptyButton: {
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  emptyButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  fab: {
+    position: "absolute",
+    bottom: 24,
+    right: 24,
+    borderRadius: 28,
+    overflow: "hidden",
+    elevation: 5,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  fabGradient: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 })
-
