@@ -30,9 +30,10 @@ import {
   Trophy,
   Zap,
 } from "lucide-react-native"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { router } from "expo-router"
 import ScreenLayout from "@/components/screen-layout"
+import * as SecureStore from "expo-secure-store"
 
 const { width, height } = Dimensions.get("window")
 const CARD_WIDTH = (width - 48) / 2
@@ -42,7 +43,11 @@ export default function HomeScreen() {
   const rotateAnim = useSharedValue(0)
   const sparkleAnim = useSharedValue(0)
 
+  const [userProfile, setUserProfile] = useState<{ name: string; branch: string } | null>(null)
+  const [avatarImage, setAvatarImage] = useState<string | null>(null)
+
   useEffect(() => {
+    loadUserProfile()
     pulseAnim.value = withRepeat(
       withSequence(withTiming(1.05, { duration: 1000 }), withTiming(1, { duration: 1000 })),
       -1,
@@ -55,6 +60,28 @@ export default function HomeScreen() {
       true,
     )
   }, [])
+
+  const loadUserProfile = async () => {
+    try {
+      // Load user profile from SecureStore
+      const profileData = await SecureStore.getItemAsync("userProfile")
+      if (profileData) {
+        const profile = JSON.parse(profileData)
+        setUserProfile({
+          name: profile.name || "User",
+          branch: profile.branch || "Student",
+        })
+      }
+
+      // Load avatar image from SecureStore
+      const avatarBase64 = await SecureStore.getItemAsync("avatarImage")
+      if (avatarBase64) {
+        setAvatarImage(`data:image/jpeg;base64,${avatarBase64}`)
+      }
+    } catch (error) {
+      console.error("Error loading user profile:", error)
+    }
+  }
 
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseAnim.value }],
@@ -119,12 +146,14 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.welcomeText}>Welcome back,</Text>
-            <Text style={styles.usernameText}>Crypto Explorer</Text>
+            <Text style={styles.usernameText}>{userProfile?.name || "Crypto Explorer"}</Text>
           </View>
           <TouchableOpacity style={styles.profileButton}>
             <Image
               source={{
-                uri: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
+                uri:
+                  avatarImage ||
+                  "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
               }}
               style={styles.profileImage}
             />
