@@ -3,7 +3,7 @@
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Linking } from "react-native"
 import { BlurView } from "expo-blur"
 import Animated, { FadeIn, FadeOut, SlideInLeft, SlideOutLeft } from "react-native-reanimated"
-import { Settings, LogOut, Vote, Trophy, Calendar, Globe, HelpCircle, KeyRound, Gamepad2 } from "lucide-react-native"
+import { Settings, LogOut, Vote, Trophy, Calendar, Globe, HelpCircle, KeyRound, Gamepad2, Gift } from "lucide-react-native"
 import { Link, type LinkProps } from "expo-router"
 import { LinearGradient } from "expo-linear-gradient"
 
@@ -28,6 +28,7 @@ const menuItems: Array<{
   { icon: Trophy, label: "Leaderboard", href: "/[sidebar)/leaderboard", section: "Campus" },
   { icon: Calendar, label: "Events Calendar", href: "/[sidebar)/events", section: "Campus" },
   { icon: Globe, label: "Campus Metaverse", href: "/[sidebar)/metaverse", section: "Campus" },
+  { icon: Gift, label: "Airdrops", href: "/[sidebar)/airdrop", section: "Campus" },
 
   // Help & Settings
   { icon: HelpCircle, label: "Help/FAQ", href: "/[sidebar)/help", section: "Support" },
