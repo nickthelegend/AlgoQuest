@@ -12,10 +12,22 @@ import {
   Linking,
   Image,
   ScrollView,
+  ActivityIndicator,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
-import { Copy, Send, Wallet, ArrowDown, Check, Coins, History } from "lucide-react-native"
+import {
+  Copy,
+  Send,
+  Wallet as WalletIcon,
+  ArrowDown,
+  Check,
+  Coins,
+  History,
+  Shield,
+  Zap,
+  Gift,
+} from "lucide-react-native"
 import { useState, useEffect } from "react"
 import * as Clipboard from "expo-clipboard"
 import * as SecureStore from "expo-secure-store"
@@ -23,6 +35,7 @@ import algosdk from "algosdk"
 import { QUEST_COIN_ASSET_ID } from "@/lib/algoClient"
 import { router } from "expo-router"
 import QRCodeStyled from "react-native-qrcode-styled"
+import { LinearGradient } from "expo-linear-gradient"
 
 const { width } = Dimensions.get("window")
 const CARD_WIDTH = width * 0.9
@@ -47,6 +60,7 @@ export default function WalletScreen() {
   const [transactionCount, setTransactionCount] = useState(0)
   const [nfts, setNfts] = useState<NFTAsset[]>([])
   const [loading, setLoading] = useState(true)
+  const [showQR, setShowQR] = useState(false)
 
   useEffect(() => {
     loadWalletAddress()
@@ -261,157 +275,210 @@ export default function WalletScreen() {
     }
   }
 
+  const toggleQRCode = () => {
+    setShowQR(!showQR)
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ffffff" />}
       >
-        {/* Balance Card */}
-        <View style={styles.header}>
-          <BlurView intensity={40} tint="dark" style={styles.balanceCard}>
-            <View style={styles.balanceHeader}>
-              <Wallet size={24} color="#ffffff" />
-              <Text style={styles.balanceLabel}>ALGO Balance</Text>
-            </View>
-            <Text style={styles.balanceAmount}>{algoBalance.toFixed(3)} ALGO</Text>
-            <Text style={styles.balanceUsd}>≈ ${(algoBalance * algoPrice).toFixed(2)} USD</Text>
+        {/* Main Balance Card */}
+        <LinearGradient
+          colors={["#7C3AED", "#4F46E5"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.mainBalanceCard}
+        >
+          <View style={styles.balanceHeader}>
+            <WalletIcon size={24} color="#ffffff" />
+            <Text style={styles.balanceLabel}>ALGO Balance</Text>
+          </View>
+          <Text style={styles.balanceAmount}>{algoBalance.toFixed(3)} ALGO</Text>
+          <Text style={styles.balanceUsd}>≈ ${(algoBalance * algoPrice).toFixed(2)} USD</Text>
 
-            <TouchableOpacity
-              style={styles.dispenserButton}
-              onPress={() => Linking.openURL("https://bank.testnet.algorand.network/")}
-            >
-              <Text style={styles.dispenserText}>Want Algos?</Text>
-              <Text style={styles.dispenserHighlight}>Head to Algorand Dispenser</Text>
-            </TouchableOpacity>
-
-            {/* QR Code */}
-            {publicAddress && (
-              <View style={styles.qrCodeContainer}>
-                <View style={styles.qrCodeWrapper}>
-                  <QRCodeStyled
-                    data={publicAddress}
-                    pieceSize={8}
-                    pieceBorderRadius={2}
-                    isPiecesGlued
-                    padding={16}
-                    color="#7C3AED"
-                    // gradient={{
-                    //   type: "linear",
-                    //   options: {
-                    //     start: { x: 0, y: 0 },
-                    //     end: { x: 1, y: 1 },
-                    //     colors: ["#7C3AED", "#4F46E5"],
-                    //     locations: [0, 1],
-                    //   },
-                    // }}
-                    outerEyesOptions={{
-                      topLeft: {
-                        borderRadius: 12,
-                      },
-                      topRight: {
-                        borderRadius: 12,
-                      },
-                      bottomLeft: {
-                        borderRadius: 12,
-                      },
-                    }}
-                    innerEyesOptions={{
-                      borderRadius: 6,
-                    }}
-                    logo={{
-                      href: require("@/assets/sad.jpg"),
-                      padding: 4,
-                      scale: 2,
-                      hidePieces: false,
-                      borderRadius: 12,
-                    }}
-                    style={{ backgroundColor: "white" }}
-                  />
-                </View>
-                <Text style={styles.qrCodeText}>Scan to get my wallet address</Text>
-              </View>
-            )}
-
-            <View style={styles.addressSection}>
-              <Text style={styles.addressLabel}>Wallet Address</Text>
-              <View style={styles.addressContainer}>
-                <Text style={styles.address} numberOfLines={1}>
-                  {publicAddress}
-                </Text>
-                <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
-                  {copied ? <Check size={16} color="#4ADE80" /> : <Copy size={16} color="#ffffff" />}
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.actionButtons}>
-              <TouchableOpacity style={styles.actionButton}>
-                <ArrowDown size={20} color="#ffffff" />
-                <Text style={styles.actionButtonText}>Receive</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionButton} onPress={() => router.push("/send")}>
-                <Send size={20} color="#ffffff" />
-                <Text style={styles.actionButtonText}>Send</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.transactionSection}>
-              <View style={styles.transactionCount}>
-                <Text style={styles.transactionLabel}>Total Transactions</Text>
-                <Text style={styles.transactionNumber}>{transactionCount}</Text>
-              </View>
-              <TouchableOpacity style={styles.viewTransactionsButton} onPress={() => router.push("/transactions")}>
-                <History size={20} color="#ffffff" />
-                <Text style={styles.viewTransactionsText}>View Transactions</Text>
-              </TouchableOpacity>
-            </View>
-          </BlurView>
-        </View>
-
-        {/* Quest Coins Card */}
-        <View style={styles.header}>
-          <BlurView intensity={40} tint="dark" style={styles.balanceCard}>
-            <View style={styles.balanceHeader}>
-              <Coins size={24} color="#ffffff" />
-              <Text style={styles.balanceLabel}>Quest Coins</Text>
+          {/* Quest Coins Section */}
+          <View style={styles.questCoinsSection}>
+            <View style={styles.questCoinsHeader}>
+              <Coins size={20} color="#ffffff" />
+              <Text style={styles.questCoinsLabel}>Quest Coins</Text>
             </View>
 
             {isOptedIn ? (
-              <>
-                <Text style={styles.balanceAmount}>{questCoinBalance} Q</Text>
-                <Text style={styles.balanceUsd}>Quest Coins can be earned by completing quests</Text>
-                <TouchableOpacity
-                  style={styles.questSendButton}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/send",
-                      params: { assetType: "quest" },
-                    })
-                  }
-                >
-                  <Send size={20} color="#ffffff" />
-                  <Text style={styles.questSendButtonText}>Send Quest Coins</Text>
-                </TouchableOpacity>
-              </>
+              <Text style={styles.questCoinsBalance}>{questCoinBalance} Q</Text>
             ) : (
-              <TouchableOpacity
-                style={[styles.optInButton, optInLoading && styles.optInButtonDisabled]}
-                onPress={handleOptIn}
-                disabled={optInLoading}
-              >
-                <Text style={styles.optInButtonText}>{optInLoading ? "Opting In..." : "Opt In to Quest Coins"}</Text>
+              <TouchableOpacity style={styles.questOptInButton} onPress={handleOptIn} disabled={optInLoading}>
+                {optInLoading ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.questOptInText}>Opt In to Quest Coins</Text>
+                )}
               </TouchableOpacity>
             )}
+          </View>
+
+          <View style={styles.actionButtonsRow}>
+            <TouchableOpacity style={styles.actionButtonCircle} onPress={toggleQRCode}>
+              <ArrowDown size={22} color="#ffffff" />
+              <Text style={styles.actionButtonText}>Receive</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionButtonCircle} onPress={() => router.push("/send")}>
+              <Send size={22} color="#ffffff" />
+              <Text style={styles.actionButtonText}>Send</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionButtonCircle}
+              onPress={() => Linking.openURL("https://bank.testnet.algorand.network/")}
+            >
+              <Gift size={22} color="#ffffff" />
+              <Text style={styles.actionButtonText}>Get ALGO</Text>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+
+        {/* QR Code Modal */}
+        {showQR && publicAddress && (
+          <BlurView intensity={40} tint="dark" style={styles.qrCodeModal}>
+            <View style={styles.qrCodeHeader}>
+              <Text style={styles.qrCodeTitle}>Your Wallet Address</Text>
+              <TouchableOpacity onPress={toggleQRCode} style={styles.closeButton}>
+                <Text style={styles.closeButtonText}>×</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.qrCodeWrapper}>
+              <QRCodeStyled
+                data={publicAddress}
+                pieceSize={8}
+                pieceBorderRadius={2}
+                isPiecesGlued
+                padding={16}
+                color="#7C3AED"
+                outerEyesOptions={{
+                  topLeft: { borderRadius: 12 },
+                  topRight: { borderRadius: 12 },
+                  bottomLeft: { borderRadius: 12 },
+                }}
+                innerEyesOptions={{ borderRadius: 6 }}
+                logo={{
+                  href: require("@/assets/sad.jpg"),
+                  padding: 4,
+                  scale: 2,
+                  hidePieces: false,
+                  borderRadius: 12,
+                }}
+                style={{ backgroundColor: "white" }}
+              />
+            </View>
+            <View style={styles.addressContainer}>
+              <Text style={styles.address} numberOfLines={1}>
+                {publicAddress}
+              </Text>
+              <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
+                {copied ? <Check size={16} color="#4ADE80" /> : <Copy size={16} color="#ffffff" />}
+              </TouchableOpacity>
+            </View>
           </BlurView>
+        )}
+
+        {/* Assets Section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Assets</Text>
+        </View>
+
+        {/* No Assets Message */}
+        {!loading && (!isOptedIn || questCoinBalance === 0) && (
+          <View style={styles.emptyStateContainer}>
+            <Text style={styles.emptyStateText}>No assets to show</Text>
+            <Text style={styles.emptyStateSubtext}>Assets you receive will appear here</Text>
+          </View>
+        )}
+
+        {/* Quick Actions */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+        </View>
+
+        <View style={styles.quickActionsGrid}>
+          <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push("/transactions")}>
+            <View style={[styles.quickActionIcon, { backgroundColor: "rgba(124, 58, 237, 0.1)" }]}>
+              <History size={24} color="#7C3AED" />
+            </View>
+            <Text style={styles.quickActionTitle}>Transaction History</Text>
+            <Text style={styles.quickActionSubtitle}>{transactionCount} transactions</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push("/wallet-backup")}>
+            <View style={[styles.quickActionIcon, { backgroundColor: "rgba(79, 70, 229, 0.1)" }]}>
+              <Shield size={24} color="#4F46E5" />
+            </View>
+            <Text style={styles.quickActionTitle}>Backup Wallet</Text>
+            <Text style={styles.quickActionSubtitle}>Secure your funds</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push("/[sidebar)/wallet-settings")}>
+            <View style={[styles.quickActionIcon, { backgroundColor: "rgba(236, 72, 153, 0.1)" }]}>
+              <Zap size={24} color="#EC4899" />
+            </View>
+            <Text style={styles.quickActionTitle}>Wallet Settings</Text>
+            <Text style={styles.quickActionSubtitle}>Customize options</Text>
+          </TouchableOpacity>
         </View>
 
         {/* NFT Gallery */}
-        <View style={styles.section}>
-          <View style={styles.nftGrid}>
-           
+        {nfts.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>NFT Collection</Text>
+              {nfts.length > 2 && (
+                <TouchableOpacity onPress={() => router.push("/nfts")}>
+                  <Text style={styles.viewAllText}>View All</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={styles.nftGrid}>
+              {nfts.slice(0, 4).map((nft) => (
+                <TouchableOpacity
+                  key={nft.id}
+                  style={styles.nftCard}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/nft-details",
+                      params: { id: nft.id.toString() },
+                    })
+                  }
+                >
+                  <View style={styles.nftCardContent}>
+                    <View style={styles.nftImageContainer}>
+                      {nft.image ? (
+                        <Image source={{ uri: nft.image }} style={styles.nftImage} resizeMode="cover" />
+                      ) : (
+                        <View style={[styles.nftImageContainer, styles.nftImagePlaceholder]}>
+                          <Text style={styles.placeholderText}>{nft.name.substring(0, 1)}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.nftInfo}>
+                      <Text style={styles.nftName} numberOfLines={1}>
+                        {nft.name}
+                      </Text>
+                      <Text style={styles.nftUnitName}>{nft.unitName}</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
+        {loading && nfts.length === 0 && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#7C3AED" />
+            <Text style={styles.loadingText}>Loading assets...</Text>
           </View>
-        </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   )
@@ -424,17 +491,17 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingTop: 10,
+    paddingBottom: 100,
   },
-  header: {
-    marginBottom: 24,
-  },
-  balanceCard: {
-    borderRadius: 20,
+  mainBalanceCard: {
+    borderRadius: 24,
     padding: 24,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    marginBottom: 24,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 10,
   },
   balanceHeader: {
     flexDirection: "row",
@@ -449,47 +516,112 @@ const styles = StyleSheet.create({
   },
   balanceAmount: {
     color: "#ffffff",
-    fontSize: 36,
+    fontSize: 40,
     fontWeight: "bold",
     marginBottom: 4,
   },
   balanceUsd: {
-    color: "rgba(255, 255, 255, 0.6)",
+    color: "rgba(255, 255, 255, 0.8)",
     fontSize: 16,
     marginBottom: 16,
   },
-  qrCodeContainer: {
-    alignItems: "center",
-    marginVertical: 20,
-    padding: 16,
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
+  questCoinsSection: {
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
     borderRadius: 16,
+    padding: 16,
+    marginBottom: 24,
+  },
+  questCoinsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  questCoinsLabel: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  questCoinsBalance: {
+    color: "#ffffff",
+    fontSize: 24,
+    fontWeight: "bold",
+  },
+  questOptInButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 12,
+    padding: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  questOptInText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  actionButtonsRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+  actionButtonCircle: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    padding: 12,
+  },
+  actionButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "500",
+    marginTop: 8,
+    textAlign: "center",
+  },
+  qrCodeModal: {
+    borderRadius: 24,
+    padding: 24,
+    marginBottom: 24,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+  },
+  qrCodeHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    marginBottom: 20,
+  },
+  qrCodeTitle: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  closeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closeButtonText: {
+    color: "#ffffff",
+    fontSize: 20,
+    fontWeight: "bold",
   },
   qrCodeWrapper: {
-    padding: 12,
+    padding: 16,
     backgroundColor: "white",
-    borderRadius: 16,
+    borderRadius: 20,
     shadowColor: "#7C3AED",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
     elevation: 5,
-  },
-  qrCodeText: {
-    color: "rgba(255, 255, 255, 0.8)",
-    fontSize: 14,
-    marginTop: 16,
-    fontWeight: "500",
-  },
-  addressSection: {
-    marginBottom: 16,
-  },
-  addressLabel: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 14,
-    marginBottom: 8,
+    marginBottom: 20,
   },
   addressContainer: {
     flexDirection: "row",
@@ -497,7 +629,8 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
+    width: "100%",
   },
   address: {
     color: "#ffffff",
@@ -505,51 +638,125 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   copyButton: {
-    padding: 4,
-  },
-  actionButtons: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
+    padding: 8,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
-    padding: 12,
-    borderRadius: 12,
+    borderRadius: 8,
   },
-  actionButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  section: {
-    marginBottom: 60,
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+    marginTop: 8,
   },
   sectionTitle: {
     color: "#ffffff",
     fontSize: 20,
     fontWeight: "bold",
+  },
+  viewAllText: {
+    color: "#7C3AED",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  assetCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  assetIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 16,
+  },
+  assetInfo: {
+    flex: 1,
+  },
+  assetName: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  assetBalance: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
+  },
+  assetNotOptedIn: {
+    color: "#9CA3AF",
+    fontSize: 14,
+  },
+  optInBadge: {
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  optInBadgeText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  quickActionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    marginBottom: 24,
+  },
+  quickActionCard: {
+    width: (width - 48) / 3,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 16,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  quickActionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  quickActionTitle: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  quickActionSubtitle: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 12,
+    textAlign: "center",
   },
   nftGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 16,
+    justifyContent: "space-between",
+    marginBottom: 24,
   },
   nftCard: {
-    width: NFT_SIZE,
-    borderRadius: 16,
-    overflow: "hidden",
+    width: (width - 40) / 2,
+    marginBottom: 16,
   },
   nftCardContent: {
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 16,
     overflow: "hidden",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
   },
   nftImageContainer: {
     width: "100%",
@@ -557,131 +764,63 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     overflow: "hidden",
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
   },
   nftImage: {
     width: "100%",
     height: "100%",
   },
   nftImagePlaceholder: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   placeholderText: {
-    color: "rgba(255, 255, 255, 0.5)",
-    fontSize: 14,
-    textAlign: "center",
+    color: "#7C3AED",
+    fontSize: 32,
+    fontWeight: "bold",
   },
   nftInfo: {
     padding: 12,
-    gap: 4,
   },
   nftName: {
     color: "#ffffff",
     fontSize: 14,
     fontWeight: "600",
+    marginBottom: 4,
   },
   nftUnitName: {
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 12,
   },
+  loadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 40,
+  },
   loadingText: {
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 16,
-    textAlign: "center",
-    width: "100%",
-    marginTop: 20,
-  },
-  emptyText: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 16,
-    textAlign: "center",
-    width: "100%",
-    marginTop: 20,
-  },
-  dispenserButton: {
-    backgroundColor: "rgba(124, 58, 237, 0.1)",
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 12,
-    marginBottom: 20,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(124, 58, 237, 0.3)",
-  },
-  dispenserText: {
-    color: "#ffffff",
-    fontSize: 14,
-    opacity: 0.8,
-  },
-  dispenserHighlight: {
-    color: "#7C3AED",
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 4,
-  },
-  optInButton: {
-    backgroundColor: "#7C3AED",
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
     marginTop: 16,
   },
-  optInButtonDisabled: {
-    opacity: 0.6,
-  },
-  optInButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  transactionSection: {
-    marginTop: 20,
-    padding: 16,
+  emptyStateContainer: {
     backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 12,
-  },
-  transactionCount: {
-    marginBottom: 12,
-  },
-  transactionLabel: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 14,
-  },
-  transactionNumber: {
-    color: "#ffffff",
-    fontSize: 24,
-    fontWeight: "bold",
-  },
-  viewTransactionsButton: {
-    flexDirection: "row",
+    borderRadius: 16,
+    padding: 24,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    backgroundColor: "rgba(124, 58, 237, 0.1)",
-    padding: 12,
-    borderRadius: 8,
-  },
-  viewTransactionsText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  questSendButton: {
-    backgroundColor: "rgba(124, 58, 237, 0.2)",
-    padding: 12,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 16,
+    marginBottom: 24,
     borderWidth: 1,
-    borderColor: "rgba(124, 58, 237, 0.3)",
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
-  questSendButtonText: {
+  emptyStateText: {
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
+    textAlign: "center",
   },
 })
-

@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
   logoImage: {
     width: 120,
     height: 40,
-    marginLeft: 8,
+    // marginLeft: 8,
   },
   rightSection: {
     flexDirection: "row",
