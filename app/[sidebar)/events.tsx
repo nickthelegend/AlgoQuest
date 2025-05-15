@@ -261,12 +261,12 @@ export default function EventsScreen() {
   }
 
   const handleHostEvent = () => {
-    router.push("/events/create")
+    router.push("/(events)/create")
   }
 
   const navigateToEventDetail = (event) => {
     router.push({
-      pathname: "/events/event",
+      pathname: "/(events)/event",
       params: { id: event.originalId },
     })
   }

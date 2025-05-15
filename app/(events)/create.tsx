@@ -634,9 +634,9 @@ export default function CreateEventScreen() {
         eventId: eventId,
         maxParticipants: Number.parseInt(capacity),
         eventCreator: eventCreator,
+        eventCategory: selectedCategory, // Updated field name to match API
         // Additional fields that might be useful for the app
         description: eventDescription,
-        category: selectedCategory,
         coordinates: locationCoordinates
           ? {
               latitude: locationCoordinates.latitude,
