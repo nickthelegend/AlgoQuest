@@ -2,7 +2,7 @@
 
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Dimensions, Image } from "react-native"
 import { BlurView } from "expo-blur"
-import Animated, { FadeInDown } from "react-native-reanimated"
+import Animated, { FadeInDown, FadeIn } from "react-native-reanimated"
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -13,33 +13,21 @@ import {
   Filter,
   Search,
   Calendar,
-  Menu,
+  ChevronLeft,
   Loader,
+  Tag,
 } from "lucide-react-native"
 import ScreenLayout from "../../components/screen-layout"
-import { useState, useEffect } from "react"
-import { router } from "expo-router"
+import { useState, useEffect, useCallback } from "react"
+import { router, useNavigation } from "expo-router"
 import * as SecureStore from "expo-secure-store"
 import MapView, { Marker } from "react-native-maps"
 import algosdk from "algosdk"
 import { Buffer } from "buffer"
+import { LinearGradient } from "expo-linear-gradient"
 
 const { width } = Dimensions.get("window")
 const CARD_WIDTH = width - 32
-
-const eventCategories = [
-  { id: "all", name: "All" },
-  { id: "workshop", name: "Workshops" },
-  { id: "meetup", name: "Meetups" },
-  { id: "hackathon", name: "Hackathons" },
-  { id: "conference", name: "Conferences" },
-]
-
-// Add a new filter option at the top of the file, after eventCategories
-const eventTimeFilters = [
-  { id: "upcoming", name: "Upcoming" },
-  { id: "past", name: "Past" },
-]
 
 // Get current month and year formatted
 const getCurrentMonthYear = () => {
@@ -195,13 +183,21 @@ async function fetchAlgorandEvents() {
         endTime: endTime,
         eventAppId: Number(decodedTuple[9]),
         imageUrl: `https://picsum.photos/seed/${decodedTuple[0]}/300/200`,
+        isPast: startTime < new Date(), // Add a flag to identify past events
       }
 
       events.push(event)
     }
 
-    // Sort events by how soon they are happening
-    return events.sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
+    // Sort events: upcoming first (sorted by start time), then past events (sorted by start time)
+    return events.sort((a, b) => {
+      // If one is past and one is upcoming, upcoming comes first
+      if (a.isPast && !b.isPast) return 1
+      if (!a.isPast && b.isPast) return -1
+
+      // Otherwise sort by start time
+      return a.startTime.getTime() - b.startTime.getTime()
+    })
   } catch (error) {
     console.error("Error fetching Algorand events:", error)
     return []
@@ -209,15 +205,17 @@ async function fetchAlgorandEvents() {
 }
 
 export default function EventsScreen() {
+  const navigation = useNavigation()
   const [refreshing, setRefreshing] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState("all")
-  const [timeFilter, setTimeFilter] = useState("upcoming")
   const [calendarDays, setCalendarDays] = useState(generateCalendarDays())
   const [selectedDay, setSelectedDay] = useState(0) // Index of selected day
   const [publicAddress, setPublicAddress] = useState("")
   const [upcomingEvents, setUpcomingEvents] = useState([])
+  const [pastEvents, setPastEvents] = useState([])
   const [currentMonthYear, setCurrentMonthYear] = useState(getCurrentMonthYear())
   const [loading, setLoading] = useState(true)
+  const [showPastEvents, setShowPastEvents] = useState(false)
 
   useEffect(() => {
     loadWalletAddress()
@@ -239,7 +237,13 @@ export default function EventsScreen() {
     setLoading(true)
     try {
       const events = await fetchAlgorandEvents()
-      setUpcomingEvents(events)
+
+      // Separate upcoming and past events
+      const upcoming = events.filter((event) => !event.isPast)
+      const past = events.filter((event) => event.isPast)
+
+      setUpcomingEvents(upcoming)
+      setPastEvents(past)
     } catch (error) {
       console.error("Error loading events:", error)
     } finally {
@@ -264,26 +268,46 @@ export default function EventsScreen() {
     router.push("/(events)/create")
   }
 
+  const handleGoBack = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack()
+    } else {
+      router.push("/(tabs)")
+    }
+  }, [navigation])
+
   const navigateToEventDetail = (event) => {
+    // Pass all necessary parameters to the event detail screen
     router.push({
       pathname: "/(events)/event",
-      params: { id: event.originalId },
+      params: {
+        id: event.originalId,
+        title: event.title,
+        category: event.category,
+        location: event.location,
+        startTime: event.startTime.getTime(),
+        endTime: event.endTime.getTime(),
+        attendees: event.attendees,
+        maxParticipants: event.maxParticipants,
+        creator: event.creator,
+        eventAppId: event.eventAppId,
+        imageUrl: event.imageUrl,
+      },
     })
   }
 
-  // Filter events by category and time
-  const filteredEvents = upcomingEvents.filter((event) => {
-    // First filter by time (upcoming or past)
-    const isPastEvent = event.startTime < new Date()
-    if (timeFilter === "upcoming" && isPastEvent) return false
-    if (timeFilter === "past" && !isPastEvent) return false
+  // Filter events by category
+  const filteredUpcomingEvents = upcomingEvents.filter((event) => {
+    return selectedCategory === "all" || event.category.toLowerCase() === selectedCategory.toLowerCase()
+  })
 
-    // Then filter by category
+  const filteredPastEvents = pastEvents.filter((event) => {
     return selectedCategory === "all" || event.category.toLowerCase() === selectedCategory.toLowerCase()
   })
 
   // Update category buttons based on actual categories from events
-  const uniqueCategories = [...new Set(upcomingEvents.map((event) => event.category))]
+  const allEvents = [...upcomingEvents, ...pastEvents]
+  const uniqueCategories = [...new Set(allEvents.map((event) => event.category))]
   const dynamicCategories = [
     { id: "all", name: "All" },
     ...uniqueCategories.map((category) => ({
@@ -292,6 +316,134 @@ export default function EventsScreen() {
     })),
   ]
 
+  const renderEventCard = (event, index, isPast = false) => (
+    <Animated.View
+      key={event.id}
+      entering={FadeInDown.delay(300 + index * 100).springify()}
+      style={[styles.eventCardContainer, isPast && styles.pastEventCardContainer]}
+    >
+      <TouchableOpacity
+        style={styles.eventCardTouchable}
+        onPress={() => navigateToEventDetail(event)}
+        activeOpacity={0.8}
+      >
+        <BlurView intensity={40} tint="dark" style={styles.eventCard}>
+          {/* Event Image */}
+          <View style={styles.eventImageContainer}>
+            {event.imageUrl ? (
+              <Image source={{ uri: event.imageUrl }} style={styles.eventImage} resizeMode="cover" />
+            ) : event.coordinates ? (
+              <MapView
+                style={styles.eventImage}
+                region={{
+                  latitude: event.coordinates.latitude,
+                  longitude: event.coordinates.longitude,
+                  latitudeDelta: 0.02,
+                  longitudeDelta: 0.02,
+                }}
+                scrollEnabled={false}
+                zoomEnabled={false}
+                rotateEnabled={false}
+                pitchEnabled={false}
+              >
+                <Marker
+                  coordinate={{
+                    latitude: event.coordinates.latitude,
+                    longitude: event.coordinates.longitude,
+                  }}
+                  title={event.title}
+                />
+              </MapView>
+            ) : (
+              <View style={[styles.eventImage, styles.fallbackMapContainer]}>
+                <MapPin size={32} color="#7C3AED" />
+                <Text style={styles.fallbackMapText}>Location map unavailable</Text>
+              </View>
+            )}
+
+            {/* Gradient overlay for better text visibility */}
+            <LinearGradient colors={["transparent", "rgba(0,0,0,0.7)"]} style={styles.imageGradient} />
+
+            {/* Location badge */}
+            <View style={styles.locationOverlay}>
+              <MapPin size={16} color="#ffffff" />
+              <Text style={styles.locationOverlayText} numberOfLines={1}>
+                {event.location}
+              </Text>
+            </View>
+
+            {/* Category badge */}
+            <View style={styles.categoryBadge}>
+              <Tag size={12} color="#ffffff" />
+              <Text style={styles.categoryBadgeText}>{event.category}</Text>
+            </View>
+
+            {/* Date badge */}
+            <View style={styles.dateBadge}>
+              <Text style={styles.dateBadgeDay}>{event.date.split(" ")[1]}</Text>
+              <Text style={styles.dateBadgeMonth}>{event.date.split(" ")[0]}</Text>
+            </View>
+
+            {/* Past event overlay */}
+            {isPast && (
+              <View style={styles.pastEventOverlay}>
+                <Text style={styles.pastEventText}>Past Event</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.eventContent}>
+            {/* Event Title and Rating */}
+            <View style={styles.eventHeader}>
+              <View style={styles.eventInfo}>
+                <Text style={styles.eventTitle} numberOfLines={1}>
+                  {event.title}
+                </Text>
+                <Text style={styles.eventDescription} numberOfLines={2}>
+                  {event.description}
+                </Text>
+              </View>
+            </View>
+
+            {/* Event Details */}
+            <View style={styles.eventDetailsRow}>
+              <View style={styles.detailItem}>
+                <Clock size={16} color="#94A3B8" />
+                <Text style={styles.detailText}>{event.time}</Text>
+              </View>
+
+              <View style={styles.daysAwayTag}>
+                <Text style={styles.daysAwayText}>
+                  {event.daysAway === 0
+                    ? "Today"
+                    : event.daysAway === 1
+                      ? "Tomorrow"
+                      : event.daysAway < 0
+                        ? `${Math.abs(event.daysAway)} days ago`
+                        : `In ${event.daysAway} days`}
+                </Text>
+              </View>
+            </View>
+
+            {/* Event Footer */}
+            <View style={styles.eventFooter}>
+              <View style={styles.attendeesContainer}>
+                <Users size={16} color="#94A3B8" />
+                <Text style={styles.attendeesText}>
+                  {event.attendees} / {event.maxParticipants}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.viewDetailsButton}>
+                <Text style={styles.viewDetailsText}>Details</Text>
+                <ChevronRight size={16} color="#7C3AED" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </BlurView>
+      </TouchableOpacity>
+    </Animated.View>
+  )
+
   return (
     <ScreenLayout>
       <ScrollView
@@ -299,10 +451,10 @@ export default function EventsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ffffff" />}
       >
         {/* Header */}
-        <View style={styles.header}>
+        <Animated.View entering={FadeIn.duration(300)} style={styles.header}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity style={styles.menuButton} onPress={() => router.push("/(drawer)")}>
-              <Menu size={24} color="#ffffff" />
+            <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
+              <ChevronLeft size={24} color="#ffffff" />
             </TouchableOpacity>
             <View>
               <Text style={styles.title}>Events</Text>
@@ -315,10 +467,10 @@ export default function EventsScreen() {
             </TouchableOpacity>
             <TouchableOpacity style={styles.hostButton} onPress={handleHostEvent}>
               <Plus size={20} color="#ffffff" />
-              <Text style={styles.hostButtonText}>Host Event</Text>
+              <Text style={styles.hostButtonText}>Host</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
 
         {/* Calendar Strip */}
         <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.calendarSection}>
@@ -375,25 +527,8 @@ export default function EventsScreen() {
           </BlurView>
         </Animated.View>
 
-        {/* Time Filter */}
-        <Animated.View entering={FadeInDown.delay(300).springify()} style={styles.timeFilterContainer}>
-          <View style={styles.timeFilterButtons}>
-            {eventTimeFilters.map((filter) => (
-              <TouchableOpacity
-                key={filter.id}
-                style={[styles.timeFilterButton, timeFilter === filter.id && styles.selectedTimeFilterButton]}
-                onPress={() => setTimeFilter(filter.id)}
-              >
-                <Text style={[styles.timeFilterText, timeFilter === filter.id && styles.selectedTimeFilterText]}>
-                  {filter.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </Animated.View>
-
         {/* Categories */}
-        <Animated.View entering={FadeInDown.delay(350).springify()} style={styles.categoriesContainer}>
+        <Animated.View entering={FadeInDown.delay(300).springify()} style={styles.categoriesContainer}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -413,12 +548,12 @@ export default function EventsScreen() {
           </ScrollView>
         </Animated.View>
 
-        {/* Events Section */}
-        <View style={styles.section}>
+        {/* Upcoming Events Section */}
+        <Animated.View entering={FadeInDown.delay(400).springify()} style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
               <CalendarIcon size={18} color="#7C3AED" />
-              <Text style={styles.sectionTitle}>{timeFilter === "upcoming" ? "Upcoming Events" : "Past Events"}</Text>
+              <Text style={styles.sectionTitle}>Upcoming Events</Text>
             </View>
             <TouchableOpacity style={styles.filterButton}>
               <Filter size={16} color="#ffffff" />
@@ -433,107 +568,14 @@ export default function EventsScreen() {
             </BlurView>
           ) : (
             <View style={styles.eventsList}>
-              {filteredEvents.length > 0 ? (
-                filteredEvents.map((event, index) => (
-                  <Animated.View key={event.id} entering={FadeInDown.delay(500 + index * 100).springify()}>
-                    <TouchableOpacity onPress={() => navigateToEventDetail(event)}>
-                      {/* Event Card */}
-                      <BlurView intensity={40} tint="dark" style={styles.eventCard}>
-                        <View style={styles.eventImageContainer}>
-                          {event.imageUrl ? (
-                            <Image source={{ uri: event.imageUrl }} style={styles.eventImage} resizeMode="cover" />
-                          ) : event.coordinates ? (
-                            <MapView
-                              style={styles.eventImage}
-                              region={{
-                                latitude: event.coordinates.latitude,
-                                longitude: event.coordinates.longitude,
-                                latitudeDelta: 0.02,
-                                longitudeDelta: 0.02,
-                              }}
-                              scrollEnabled={false}
-                              zoomEnabled={false}
-                              rotateEnabled={false}
-                              pitchEnabled={false}
-                            >
-                              <Marker
-                                coordinate={{
-                                  latitude: event.coordinates.latitude,
-                                  longitude: event.coordinates.longitude,
-                                }}
-                                title={event.title}
-                              />
-                            </MapView>
-                          ) : (
-                            <View style={[styles.eventImage, styles.fallbackMapContainer]}>
-                              <MapPin size={32} color="#7C3AED" />
-                              <Text style={styles.fallbackMapText}>Location map unavailable</Text>
-                            </View>
-                          )}
-                          <View style={styles.locationOverlay}>
-                            <MapPin size={16} color="#ffffff" />
-                            <Text style={styles.locationOverlayText}>{event.location}</Text>
-                          </View>
-                        </View>
-
-                        <View style={styles.eventContent}>
-                          <View style={styles.eventHeader}>
-                            <View style={styles.eventInfo}>
-                              <Text style={styles.eventTitle}>{event.title}</Text>
-                              <Text style={styles.eventDescription} numberOfLines={2}>
-                                {event.description}
-                              </Text>
-                            </View>
-                            <View style={styles.categoryTag}>
-                              <Text style={styles.categoryTagText}>{event.category}</Text>
-                            </View>
-                          </View>
-
-                          <View style={styles.eventDetailsRow}>
-                            <View style={styles.detailItem}>
-                              <CalendarIcon size={16} color="#94A3B8" />
-                              <Text style={styles.detailText}>{event.date}</Text>
-                            </View>
-                            <View style={styles.detailItem}>
-                              <Clock size={16} color="#94A3B8" />
-                              <Text style={styles.detailText}>{event.time}</Text>
-                            </View>
-                            <View style={styles.daysAwayTag}>
-                              <Text style={styles.daysAwayText}>
-                                {event.daysAway === 0
-                                  ? "Today"
-                                  : event.daysAway === 1
-                                    ? "Tomorrow"
-                                    : event.daysAway < 0
-                                      ? "Past event"
-                                      : `In ${event.daysAway} days`}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={styles.eventFooter}>
-                            <View style={styles.attendeesContainer}>
-                              <Users size={16} color="#94A3B8" />
-                              <Text style={styles.attendeesText}>
-                                {event.attendees} / {event.maxParticipants} attending
-                              </Text>
-                            </View>
-                            <TouchableOpacity style={styles.viewDetailsButton}>
-                              <Text style={styles.viewDetailsText}>View Details</Text>
-                              <ChevronRight size={16} color="#7C3AED" />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      </BlurView>
-                    </TouchableOpacity>
-                  </Animated.View>
-                ))
+              {filteredUpcomingEvents.length > 0 ? (
+                filteredUpcomingEvents.map((event, index) => renderEventCard(event, index))
               ) : (
                 <BlurView intensity={40} tint="dark" style={styles.noEventsContainer}>
                   <Text style={styles.noEventsText}>
                     {selectedCategory !== "all"
-                      ? `No ${timeFilter} events found in the "${selectedCategory}" category`
-                      : `No ${timeFilter} events found`}
+                      ? `No upcoming events in the "${selectedCategory}" category`
+                      : `No upcoming events found`}
                   </Text>
                   <TouchableOpacity style={styles.resetFilterButton} onPress={() => setSelectedCategory("all")}>
                     <Text style={styles.resetFilterText}>Show all events</Text>
@@ -542,7 +584,30 @@ export default function EventsScreen() {
               )}
             </View>
           )}
-        </View>
+        </Animated.View>
+
+        {/* Past Events Section */}
+        {filteredPastEvents.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(500).springify()} style={styles.section}>
+            <TouchableOpacity style={styles.pastEventsSectionHeader} onPress={() => setShowPastEvents(!showPastEvents)}>
+              <View style={styles.sectionTitleContainer}>
+                <CalendarIcon size={18} color="#94A3B8" />
+                <Text style={styles.pastEventsSectionTitle}>Past Events</Text>
+              </View>
+              <ChevronRight
+                size={20}
+                color="#94A3B8"
+                style={[styles.pastEventsChevron, showPastEvents && styles.pastEventsChevronExpanded]}
+              />
+            </TouchableOpacity>
+
+            {showPastEvents && (
+              <View style={styles.eventsList}>
+                {filteredPastEvents.map((event, index) => renderEventCard(event, index, true))}
+              </View>
+            )}
+          </Animated.View>
+        )}
 
         {/* Bottom padding */}
         <View style={{ height: 100 }} />
@@ -564,6 +629,9 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: "bold",
     color: "#ffffff",
+    textShadowColor: "rgba(0, 0, 0, 0.2)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   subtitle: {
     fontSize: 16,
@@ -590,6 +658,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   hostButtonText: {
     color: "#ffffff",
@@ -649,6 +722,11 @@ const styles = StyleSheet.create({
   selectedDayItem: {
     backgroundColor: "#7C3AED",
     borderColor: "#7C3AED",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   todayItem: {
     borderColor: "#7C3AED",
@@ -726,16 +804,30 @@ const styles = StyleSheet.create({
   eventsList: {
     gap: 16,
   },
+  eventCardContainer: {
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  pastEventCardContainer: {
+    opacity: 0.8,
+  },
+  eventCardTouchable: {
+    borderRadius: 16,
+    overflow: "hidden",
+  },
   eventCard: {
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
-    marginBottom: 16,
   },
   eventImage: {
     width: "100%",
-    height: 120,
+    height: 150,
   },
   eventContent: {
     padding: 16,
@@ -776,7 +868,8 @@ const styles = StyleSheet.create({
   eventDetailsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 16,
   },
   eventFooter: {
@@ -788,6 +881,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
   },
   viewDetailsText: {
     color: "#7C3AED",
@@ -824,7 +921,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  menuButton: {
+  backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -834,8 +931,15 @@ const styles = StyleSheet.create({
   },
   eventImageContainer: {
     width: "100%",
-    height: 120,
+    height: 150,
     position: "relative",
+  },
+  imageGradient: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 80,
   },
   locationOverlay: {
     position: "absolute",
@@ -848,8 +952,46 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     gap: 6,
+    maxWidth: "60%",
   },
   locationOverlayText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  categoryBadge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(124, 58, 237, 0.8)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  categoryBadgeText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  dateBadge: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  dateBadgeDay: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  dateBadgeMonth: {
     color: "#ffffff",
     fontSize: 12,
     fontWeight: "500",
@@ -878,6 +1020,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   attendeesText: {
     color: "#94A3B8",
@@ -906,35 +1052,43 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 16,
   },
-  timeFilterContainer: {
-    marginBottom: 24,
-    paddingHorizontal: 16,
-  },
-  timeFilterButtons: {
+  pastEventsSectionHeader: {
     flexDirection: "row",
-    justifyContent: "center",
-    gap: 12,
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+    marginBottom: 16,
   },
-  timeFilterButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    minWidth: 100,
+  pastEventsSectionTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#94A3B8",
+  },
+  pastEventsChevron: {
+    transform: [{ rotate: "0deg" }],
+  },
+  pastEventsChevronExpanded: {
+    transform: [{ rotate: "90deg" }],
+  },
+  pastEventOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "center",
     alignItems: "center",
   },
-  selectedTimeFilterButton: {
-    backgroundColor: "rgba(124, 58, 237, 0.2)",
-    borderColor: "#7C3AED",
-  },
-  timeFilterText: {
+  pastEventText: {
     color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  selectedTimeFilterText: {
-    color: "#7C3AED",
+    fontSize: 16,
+    fontWeight: "bold",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
 })

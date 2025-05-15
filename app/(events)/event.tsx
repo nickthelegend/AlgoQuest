@@ -1,6 +1,16 @@
 "use client"
 
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, ActivityIndicator } from "react-native"
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Dimensions,
+  ActivityIndicator,
+  Alert,
+  Image,
+} from "react-native"
 import { BlurView } from "expo-blur"
 import Animated, { FadeInDown, FadeIn } from "react-native-reanimated"
 import {
@@ -14,6 +24,7 @@ import {
   Copy,
   CheckCircle,
   AlertCircle,
+  Info,
 } from "lucide-react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import ScreenLayout from "../../components/screen-layout"
@@ -23,44 +34,11 @@ import * as SecureStore from "expo-secure-store"
 import * as Clipboard from "expo-clipboard"
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps"
 import { StatusBar } from "expo-status-bar"
+import algosdk from "algosdk"
+import { Buffer } from "buffer"
 
 const { width, height } = Dimensions.get("window")
 const MAP_HEIGHT = height * 0.35
-
-// Mock event data - in a real app, you would fetch this based on the event ID
-const getEventDetails = (id) => {
-  return {
-    id: Number.parseInt(id) || 1,
-    title: "Blockchain Workshop",
-    date: "May 17",
-    time: "2:00 PM - 5:00 PM",
-    location: "Tech Hub",
-    coordinates: {
-      latitude: 37.78825,
-      longitude: -122.4324,
-    },
-    attendees: 45,
-    category: "Workshop",
-    description:
-      "Learn the fundamentals of blockchain technology and build your first smart contract. This hands-on workshop will cover the basics of blockchain architecture, smart contract development, and decentralized applications. Bring your laptop and come ready to code!",
-    organizer: "Web3 Foundation",
-    organizerWallet: "0x7F9d1B1f8c7A1e1D1f8c7A1e1D1f8c7A1e1D1f8c",
-    price: "0.05 ETH",
-    maxParticipants: 50,
-    participants: [
-      "0x1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t",
-      "0x2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1a",
-      "0x3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1a2b",
-      "0x4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1a2b3c",
-      "0x5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1a2b3c4d",
-      "0x6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1a2b3c4d5e",
-      "0x7g8h9i0j1k2l3m4n5o6p7q8r9s0t1a2b3c4d5e6f",
-      "0x8h9i0j1k2l3m4n5o6p7q8r9s0t1a2b3c4d5e6f7g",
-    ],
-    requirements: ["Basic understanding of programming concepts", "Laptop with Node.js installed", "MetaMask wallet"],
-    tags: ["Blockchain", "Smart Contracts", "Web3", "Ethereum"],
-  }
-}
 
 // Truncate wallet address for display
 const truncateAddress = (address) => {
@@ -68,42 +46,265 @@ const truncateAddress = (address) => {
   return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`
 }
 
+// Format date for display
+const formatDate = (timestamp) => {
+  const date = new Date(timestamp)
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+}
+
+// Format time for display
+const formatTime = (timestamp) => {
+  const date = new Date(timestamp)
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  })
+}
+
+// Add the fetchAndDecodeAllBoxNames function after the formatTime function
+const fetchAndDecodeAllBoxNames = async (appId: number): Promise<string[]> => {
+  try {
+    const indexer = new algosdk.Indexer("", "https://testnet-idx.algonode.cloud", "")
+    const addressTupleABI = algosdk.ABIType.from("(address)")
+
+    const resp = await indexer.searchForApplicationBoxes(appId).do()
+
+    return resp.boxes
+      .map((box) => {
+        // Normalize to Buffer
+        let rawNameBuf: Buffer
+        if (typeof box.name === "string") {
+          rawNameBuf = Buffer.from(box.name, "base64")
+        } else {
+          const u8 = box.name as Uint8Array
+          rawNameBuf = Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength)
+        }
+
+        // Check for at least prefix + 32 bytes
+        if (rawNameBuf.length < 33) {
+          return "<invalid-key>"
+        }
+
+        // Strip prefix
+        const addrBytes = rawNameBuf.slice(1, 33)
+
+        try {
+          // Decode
+          const [decodedAddress] = addressTupleABI.decode(addrBytes) as [string]
+          return decodedAddress
+        } catch (error) {
+          console.error("Error decoding address:", error)
+          return "<decode-error>"
+        }
+      })
+      .filter((addr) => addr !== "<invalid-key>" && addr !== "<decode-error>")
+  } catch (error) {
+    console.error("Error fetching box names:", error)
+    return []
+  }
+}
+
 export default function EventDetailScreen() {
   const params = useLocalSearchParams()
-  const { id } = params
   const [event, setEvent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [userWallet, setUserWallet] = useState("")
+  // Add a new state variable for participants after the existing state variables
+  const [participants, setParticipants] = useState<string[]>([])
   const [isParticipating, setIsParticipating] = useState(false)
   const [participateLoading, setParticipateLoading] = useState(false)
   const [showCopiedMessage, setShowCopiedMessage] = useState(false)
+  const [mapError, setMapError] = useState(false)
+  const [transactionStatus, setTransactionStatus] = useState("")
 
   useEffect(() => {
     loadData()
-  }, [id])
+  }, [])
 
+  // Update the loadData function to fetch participants
   const loadData = async () => {
     setLoading(true)
     try {
-      // In a real app, fetch event data from API
-      const eventData = getEventDetails(id)
-      setEvent(eventData)
+      // First try to use the params passed from the events screen
+      if (params.id) {
+        // Check if we have all the necessary data in params
+        if (params.title && params.location && params.startTime) {
+          // Create event object from params
+          const coordinates = parseCoordinates(params.location)
 
-      // Load user wallet
-      const walletAddress = await SecureStore.getItemAsync("walletAddress")
-      setUserWallet(walletAddress || "")
+          const eventData = {
+            id: Number(params.id),
+            title: params.title,
+            category: params.category || "Event",
+            location: params.location,
+            coordinates: coordinates,
+            startTime: new Date(Number(params.startTime)),
+            endTime: params.endTime ? new Date(Number(params.endTime)) : null,
+            attendees: Number(params.attendees || 0),
+            maxParticipants: Number(params.maxParticipants || 100),
+            creator: params.creator || "",
+            eventAppId: Number(params.eventAppId || 0),
+            imageUrl: params.imageUrl || `https://picsum.photos/seed/${params.id}/300/200`,
+          }
 
-      // Check if user is already participating
-      if (walletAddress && eventData.participants.includes(walletAddress)) {
-        setIsParticipating(true)
+          setEvent(eventData)
+
+          // Load user wallet
+          const walletAddress = await SecureStore.getItemAsync("walletAddress")
+          setUserWallet(walletAddress || "")
+
+          // Fetch participants if we have an app ID
+          if (eventData.eventAppId) {
+            const participantAddresses = await fetchAndDecodeAllBoxNames(eventData.eventAppId)
+            setParticipants(participantAddresses)
+
+            // Check if user is already participating
+            setIsParticipating(participantAddresses.includes(walletAddress))
+          }
+
+          setLoading(false)
+          return
+        }
+
+        // If we don't have all the necessary data in params, fetch from blockchain
+        await fetchEventFromBlockchain(Number(params.id))
+      } else {
+        // No ID provided
+        console.error("No event ID provided")
+        setLoading(false)
       }
     } catch (error) {
       console.error("Error loading event data:", error)
+      setLoading(false)
+    }
+  }
+
+  const parseCoordinates = (locationStr) => {
+    if (!locationStr) return null
+
+    try {
+      const [lat, lng] = locationStr.split(",").map((coord) => Number.parseFloat(coord.trim()))
+      if (!isNaN(lat) && !isNaN(lng)) {
+        return { latitude: lat, longitude: lng }
+      }
+    } catch (error) {
+      console.log("Error parsing coordinates:", error)
+    }
+
+    return null
+  }
+
+  // Update the fetchEventFromBlockchain function to fetch participants
+  const fetchEventFromBlockchain = async (eventId) => {
+    try {
+      const indexer = new algosdk.Indexer("", "https://testnet-idx.algonode.cloud", "")
+      const appId = 739603588 // App ID
+
+      // Updated ABI type with 10 fields
+      const abiType = algosdk.ABIType.from("(uint64,string,string,address,uint64,string,uint64,uint64,uint64,uint64)")
+
+      const boxesResp = await indexer.searchForApplicationBoxes(appId).do()
+
+      for (const box of boxesResp.boxes) {
+        // Decode box.name
+        const nameBuf =
+          typeof box.name === "string"
+            ? Buffer.from(box.name, "base64")
+            : Buffer.from(
+                (box.name as Uint8Array).buffer,
+                (box.name as Uint8Array).byteOffset,
+                (box.name as Uint8Array).byteLength,
+              )
+
+        // Fetch box value
+        const valResp = await indexer
+          .lookupApplicationBoxByIDandName(
+            appId,
+            new Uint8Array(nameBuf.buffer, nameBuf.byteOffset, nameBuf.byteLength),
+          )
+          .do()
+
+        // Normalize to Buffer
+        let buf: Buffer
+        if (typeof valResp.value === "string") {
+          buf = Buffer.from(valResp.value, "base64")
+        } else {
+          const u8 = valResp.value as Uint8Array
+          buf = Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength)
+        }
+
+        // ABI Decode
+        const decodedTuple = abiType.decode(buf) as [
+          bigint, // 0: eventID
+          string, // 1: eventName
+          string, // 2: category
+          string, // 3: eventCreator (address)
+          bigint, // 4: maxParticipants
+          string, // 5: location
+          bigint, // 6: startTime
+          bigint, // 7: endTime
+          bigint, // 8: registeredCount
+          bigint, // 9: eventAppID
+        ]
+
+        // Check if this is the event we're looking for
+        if (Number(decodedTuple[0]) === eventId) {
+          // Parse location string to get coordinates
+          const locationStr = decodedTuple[5]
+          const coordinates = parseCoordinates(locationStr)
+
+          // Convert timestamps to dates
+          const startTime = new Date(Number(decodedTuple[6]) * 1000)
+          const endTime = new Date(Number(decodedTuple[7]) * 1000)
+
+          // Create event object
+          const eventData = {
+            id: Number(decodedTuple[0]),
+            title: decodedTuple[1],
+            category: decodedTuple[2],
+            creator: decodedTuple[3],
+            maxParticipants: Number(decodedTuple[4]),
+            location: locationStr,
+            coordinates: coordinates,
+            startTime: startTime,
+            endTime: endTime,
+            attendees: Number(decodedTuple[8]),
+            eventAppId: Number(decodedTuple[9]),
+            imageUrl: `https://picsum.photos/seed/${decodedTuple[0]}/300/200`,
+          }
+
+          setEvent(eventData)
+
+          // Load user wallet
+          const walletAddress = await SecureStore.getItemAsync("walletAddress")
+          setUserWallet(walletAddress || "")
+
+          // Fetch participants if we have an app ID
+          if (eventData.eventAppId) {
+            const participantAddresses = await fetchAndDecodeAllBoxNames(eventData.eventAppId)
+            setParticipants(participantAddresses)
+
+            // Check if user is already participating
+            setIsParticipating(participantAddresses.includes(walletAddress))
+          }
+
+          break
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching event from blockchain:", error)
     } finally {
       setLoading(false)
     }
   }
 
+  // Update the handleParticipate function to refresh participants after successful registration
   const handleParticipate = async () => {
     if (!userWallet) {
       // Redirect to wallet creation if no wallet
@@ -113,29 +314,107 @@ export default function EventDetailScreen() {
 
     setParticipateLoading(true)
     try {
-      // Simulate API call to register for event
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      // Get the user's account information
+      const accountInfo = await SecureStore.getItemAsync("accountInfo")
+      if (!accountInfo) {
+        Alert.alert("Error", "Account information not found. Please recreate your wallet.", [{ text: "OK" }])
+        setParticipateLoading(false)
+        return
+      }
 
-      // Update local state
-      if (!isParticipating) {
-        setEvent((prev) => ({
-          ...prev,
-          participants: [...prev.participants, userWallet],
-          attendees: prev.attendees + 1,
-        }))
-        setIsParticipating(true)
+      const account = JSON.parse(accountInfo)
+
+      // Connect to Algorand client
+      const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
+
+      // Get suggested parameters
+      const suggestedParams = await algodClient.getTransactionParams().do()
+
+      // Define ABI methods
+      const METHODS = [
+        new algosdk.ABIMethod({ name: "registerEvent", desc: "", args: [], returns: { type: "void", desc: "" } }),
+      ]
+
+      // Get the app ID from the event
+      const appID = event.eventAppId
+
+      // For this example, we'll use a placeholder for questAssetID
+      // In a real app, this would come from the event data or another source
+      const questAssetID = Number(params.questAssetID || 0)
+
+      // Create the application transaction
+      const txn2 = algosdk.makeApplicationNoOpTxnFromObject({
+        sender: account.addr,
+        appIndex: Number(appID),
+        appArgs: [algosdk.getMethodByName(METHODS, "registerEvent").getSelector(), algosdk.encodeUint64(questAssetID)],
+        foreignAssets: [questAssetID],
+        suggestedParams: { ...suggestedParams, fee: Number(30) },
+      })
+
+      const txns = [txn2]
+
+      // Sign the transaction
+      const signedTxns = txns.map((txn) => txn.signTxn(account.sk))
+      const txId = txn2.txID()
+
+      // Send the signed transaction
+      await algodClient.sendRawTransaction(signedTxns).do()
+
+      // Wait for confirmation
+      await waitForConfirmation(algodClient, txId, 4)
+
+      // Update UI state
+      Alert.alert("Success!", "You have successfully registered for this event.", [{ text: "OK" }])
+      setIsParticipating(true)
+
+      // Update event in state with new participant
+      if (event) {
+        setEvent({
+          ...event,
+          attendees: (event.attendees || 0) + 1,
+        })
+
+        // Refresh participants list
+        if (event.eventAppId) {
+          const updatedParticipants = await fetchAndDecodeAllBoxNames(event.eventAppId)
+          setParticipants(updatedParticipants)
+        }
       }
     } catch (error) {
       console.error("Error participating in event:", error)
+      Alert.alert("Error", `There was an error registering for this event: ${error.message}`, [{ text: "OK" }])
     } finally {
       setParticipateLoading(false)
     }
+  }
+
+  // Helper function to wait for transaction confirmation
+  const waitForConfirmation = async (algodClient, txId, timeout) => {
+    const status = await algodClient.status().do()
+    let lastRound = status["last-round"]
+
+    for (let i = 0; i < timeout; i++) {
+      const pendingInfo = await algodClient.pendingTransactionInformation(txId).do()
+
+      if (pendingInfo["confirmed-round"] !== null && pendingInfo["confirmed-round"] > 0) {
+        return pendingInfo
+      }
+
+      lastRound++
+      await algodClient.statusAfterBlock(lastRound).do()
+    }
+
+    throw new Error(`Transaction not confirmed after ${timeout} rounds`)
   }
 
   const copyAddressToClipboard = async (address) => {
     await Clipboard.setStringAsync(address)
     setShowCopiedMessage(true)
     setTimeout(() => setShowCopiedMessage(false), 2000)
+  }
+
+  const handleMapError = () => {
+    setMapError(true)
   }
 
   if (loading) {
@@ -163,33 +442,43 @@ export default function EventDetailScreen() {
     )
   }
 
-  const participantsRemaining = event.maxParticipants - event.attendees
+  const participantsRemaining = (event.maxParticipants || 100) - (event.attendees || 0)
+  const isPastEvent = event.startTime < new Date()
 
   return (
     <ScreenLayout>
       <StatusBar style="light" />
 
-      {/* Full-width Map */}
+      {/* Full-width Map or Image */}
       <View style={styles.mapContainer}>
-        <MapView
-          provider={PROVIDER_GOOGLE}
-          style={styles.map}
-          region={{
-            latitude: event.coordinates.latitude,
-            longitude: event.coordinates.longitude,
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          }}
-          
-        >
-          <Marker
-            coordinate={{
+        {event.coordinates && !mapError ? (
+          <MapView
+            provider={PROVIDER_GOOGLE}
+            style={styles.map}
+            region={{
               latitude: event.coordinates.latitude,
               longitude: event.coordinates.longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
             }}
-            title={event.location}
-          />
-        </MapView>
+            onError={handleMapError}
+          >
+            <Marker
+              coordinate={{
+                latitude: event.coordinates.latitude,
+                longitude: event.coordinates.longitude,
+              }}
+              title={event.title}
+            />
+          </MapView>
+        ) : event.imageUrl ? (
+          <Image source={{ uri: event.imageUrl }} style={styles.map} resizeMode="cover" />
+        ) : (
+          <View style={[styles.map, styles.fallbackMapContainer]}>
+            <MapPin size={48} color="#7C3AED" />
+            <Text style={styles.fallbackMapText}>Location map unavailable</Text>
+          </View>
+        )}
 
         {/* Map Overlay */}
         <LinearGradient colors={["rgba(0, 0, 0, 0.7)", "transparent"]} style={styles.mapGradient} />
@@ -208,9 +497,11 @@ export default function EventDetailScreen() {
         <View style={styles.locationBadge}>
           <MapPin size={16} color="#ffffff" />
           <Text style={styles.locationText}>{event.location}</Text>
-          <TouchableOpacity style={styles.directionsButton}>
-            <ExternalLink size={14} color="#ffffff" />
-          </TouchableOpacity>
+          {event.coordinates && (
+            <TouchableOpacity style={styles.directionsButton}>
+              <ExternalLink size={14} color="#ffffff" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -226,11 +517,11 @@ export default function EventDetailScreen() {
             <View style={styles.eventMeta}>
               <View style={styles.metaItem}>
                 <CalendarIcon size={16} color="#94A3B8" />
-                <Text style={styles.metaText}>{event.date}</Text>
+                <Text style={styles.metaText}>{formatDate(event.startTime)}</Text>
               </View>
               <View style={styles.metaItem}>
                 <Clock size={16} color="#94A3B8" />
-                <Text style={styles.metaText}>{event.time}</Text>
+                <Text style={styles.metaText}>{formatTime(event.startTime)}</Text>
               </View>
             </View>
           </View>
@@ -239,7 +530,7 @@ export default function EventDetailScreen() {
           <BlurView intensity={40} tint="dark" style={styles.statsCard}>
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <Text style={styles.statValue}>{event.attendees}</Text>
+                <Text style={styles.statValue}>{event.attendees || 0}</Text>
                 <Text style={styles.statLabel}>Participants</Text>
               </View>
               <View style={styles.statDivider} />
@@ -249,8 +540,8 @@ export default function EventDetailScreen() {
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
-                <Text style={styles.statValue}>{event.price}</Text>
-                <Text style={styles.statLabel}>Entry Fee</Text>
+                <Text style={styles.statValue}>Free</Text>
+                <Text style={styles.statLabel}>Entry</Text>
               </View>
             </View>
           </BlurView>
@@ -260,93 +551,125 @@ export default function EventDetailScreen() {
           {/* Event Description */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>About Event</Text>
-            <Text style={styles.description}>{event.description}</Text>
+            <Text style={styles.description}>
+              {event.description ||
+                `Join us for this exciting ${event.category} event! Connect with other blockchain enthusiasts and learn about the latest developments in the space.`}
+            </Text>
           </View>
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(300).springify()}>
-          {/* Requirements */}
+          {/* Event Details */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Requirements</Text>
-            <View style={styles.requirementsList}>
-              {event.requirements.map((req, index) => (
-                <View key={index} style={styles.requirementItem}>
-                  <View style={styles.bulletPoint} />
-                  <Text style={styles.requirementText}>{req}</Text>
+            <Text style={styles.sectionTitle}>Event Details</Text>
+            <BlurView intensity={40} tint="dark" style={styles.detailsCard}>
+              <View style={styles.detailRow}>
+                <View style={styles.detailIconContainer}>
+                  <CalendarIcon size={20} color="#7C3AED" />
                 </View>
-              ))}
-            </View>
+                <View style={styles.detailContent}>
+                  <Text style={styles.detailLabel}>Date & Time</Text>
+                  <Text style={styles.detailValue}>{formatDate(event.startTime)}</Text>
+                  <Text style={styles.detailValue}>
+                    {formatTime(event.startTime)} - {event.endTime ? formatTime(event.endTime) : "TBD"}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.detailDivider} />
+
+              <View style={styles.detailRow}>
+                <View style={styles.detailIconContainer}>
+                  <MapPin size={20} color="#7C3AED" />
+                </View>
+                <View style={styles.detailContent}>
+                  <Text style={styles.detailLabel}>Location</Text>
+                  <Text style={styles.detailValue}>{event.location}</Text>
+                </View>
+              </View>
+
+              <View style={styles.detailDivider} />
+
+              <View style={styles.detailRow}>
+                <View style={styles.detailIconContainer}>
+                  <Info size={20} color="#7C3AED" />
+                </View>
+                <View style={styles.detailContent}>
+                  <Text style={styles.detailLabel}>Event ID</Text>
+                  <Text style={styles.detailValue}>#{event.id}</Text>
+                  {event.eventAppId > 0 && <Text style={styles.detailValue}>App ID: {event.eventAppId}</Text>}
+                </View>
+              </View>
+            </BlurView>
           </View>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(400).springify()}>
-          {/* Organizer */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Organizer</Text>
-            <BlurView intensity={40} tint="dark" style={styles.organizerCard}>
-              <View style={styles.organizerInfo}>
-                <View style={styles.organizerAvatar}>
-                  <Text style={styles.organizerInitial}>{event.organizer.charAt(0)}</Text>
+        {event.creator && (
+          <Animated.View entering={FadeInDown.delay(400).springify()}>
+            {/* Organizer */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Organizer</Text>
+              <BlurView intensity={40} tint="dark" style={styles.organizerCard}>
+                <View style={styles.organizerInfo}>
+                  <View style={styles.organizerAvatar}>
+                    <Text style={styles.organizerInitial}>{event.creator.charAt(0)}</Text>
+                  </View>
+                  <View style={styles.organizerDetails}>
+                    <Text style={styles.organizerName}>Event Creator</Text>
+                    {event.creator && (
+                      <View style={styles.walletRow}>
+                        <Text style={styles.walletAddress}>{truncateAddress(event.creator)}</Text>
+                        <TouchableOpacity
+                          style={styles.copyButton}
+                          onPress={() => copyAddressToClipboard(event.creator)}
+                        >
+                          <Copy size={14} color="#94A3B8" />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
                 </View>
-                <View style={styles.organizerDetails}>
-                  <Text style={styles.organizerName}>{event.organizer}</Text>
-                  <View style={styles.walletRow}>
-                    <Text style={styles.walletAddress}>{truncateAddress(event.organizerWallet)}</Text>
-                    <TouchableOpacity
-                      style={styles.copyButton}
-                      onPress={() => copyAddressToClipboard(event.organizerWallet)}
-                    >
+              </BlurView>
+            </View>
+          </Animated.View>
+        )}
+
+        {participants.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(500).springify()}>
+            {/* Participants */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Participants</Text>
+                <View style={styles.participantsCount}>
+                  <Users size={14} color="#7C3AED" />
+                  <Text style={styles.participantsCountText}>
+                    {participants.length}/{event.maxParticipants || 100}
+                  </Text>
+                </View>
+              </View>
+
+              <BlurView intensity={40} tint="dark" style={styles.participantsCard}>
+                {participants.slice(0, 10).map((address, index) => (
+                  <View key={index} style={styles.participantItem}>
+                    <View style={styles.participantAvatar}>
+                      <Text style={styles.participantInitial}>{index + 1}</Text>
+                    </View>
+                    <Text style={styles.participantAddress}>{truncateAddress(address)}</Text>
+                    <TouchableOpacity style={styles.copyButton} onPress={() => copyAddressToClipboard(address)}>
                       <Copy size={14} color="#94A3B8" />
                     </TouchableOpacity>
                   </View>
-                </View>
-              </View>
-            </BlurView>
-          </View>
-        </Animated.View>
+                ))}
 
-        <Animated.View entering={FadeInDown.delay(500).springify()}>
-          {/* Participants */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Participants</Text>
-              <View style={styles.participantsCount}>
-                <Users size={14} color="#7C3AED" />
-                <Text style={styles.participantsCountText}>
-                  {event.attendees}/{event.maxParticipants}
-                </Text>
-              </View>
-            </View>
-
-            <BlurView intensity={40} tint="dark" style={styles.participantsCard}>
-              {event.participants.map((address, index) => (
-                <View key={index} style={styles.participantItem}>
-                  <View style={styles.participantAvatar}>
-                    <Text style={styles.participantInitial}>{index + 1}</Text>
+                {participants.length > 10 && (
+                  <View style={styles.moreParticipants}>
+                    <Text style={styles.moreParticipantsText}>+{participants.length - 10} more participants</Text>
                   </View>
-                  <Text style={styles.participantAddress}>{truncateAddress(address)}</Text>
-                  <TouchableOpacity style={styles.copyButton} onPress={() => copyAddressToClipboard(address)}>
-                    <Copy size={14} color="#94A3B8" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </BlurView>
-          </View>
-        </Animated.View>
-
-        {/* Tags */}
-        <Animated.View entering={FadeInDown.delay(600).springify()}>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Tags</Text>
-            <View style={styles.tagsContainer}>
-              {event.tags.map((tag, index) => (
-                <View key={index} style={styles.tag}>
-                  <Text style={styles.tagText}>{tag}</Text>
-                </View>
-              ))}
+                )}
+              </BlurView>
             </View>
-          </View>
-        </Animated.View>
+          </Animated.View>
+        )}
 
         {/* Bottom padding */}
         <View style={{ height: 100 }} />
@@ -367,9 +690,10 @@ export default function EventDetailScreen() {
               styles.participateButton,
               isParticipating && styles.participatingButton,
               participateLoading && styles.loadingButton,
+              isPastEvent && styles.pastEventButton,
             ]}
             onPress={handleParticipate}
-            disabled={participateLoading || isParticipating}
+            disabled={participateLoading || isParticipating || isPastEvent}
           >
             {participateLoading ? (
               <ActivityIndicator size="small" color="#ffffff" />
@@ -379,6 +703,11 @@ export default function EventDetailScreen() {
                   <>
                     <CheckCircle size={20} color="#ffffff" />
                     <Text style={styles.participateButtonText}>Registered</Text>
+                  </>
+                ) : isPastEvent ? (
+                  <>
+                    <AlertCircle size={20} color="#ffffff" />
+                    <Text style={styles.participateButtonText}>Event Ended</Text>
                   </>
                 ) : (
                   <>
@@ -396,6 +725,68 @@ export default function EventDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  participantsCard: {
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    padding: 16,
+  },
+  participantItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.05)",
+  },
+  participantAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  participantInitial: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#7C3AED",
+  },
+  participantAddress: {
+    flex: 1,
+    fontSize: 14,
+    color: "#ffffff",
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  participantsCount: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  participantsCountText: {
+    color: "#7C3AED",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  moreParticipants: {
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  moreParticipantsText: {
+    color: "#94A3B8",
+    fontSize: 14,
+    fontStyle: "italic",
+  },
   mapContainer: {
     width: width,
     height: MAP_HEIGHT,
@@ -552,23 +943,42 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: "rgba(255, 255, 255, 0.8)",
   },
-  requirementsList: {
-    gap: 8,
+  detailsCard: {
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
-  requirementItem: {
+  detailRow: {
     flexDirection: "row",
+    padding: 16,
+  },
+  detailIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
     alignItems: "center",
+    justifyContent: "center",
+    marginRight: 16,
   },
-  bulletPoint: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#7C3AED",
-    marginRight: 10,
+  detailContent: {
+    flex: 1,
   },
-  requirementText: {
+  detailLabel: {
     fontSize: 14,
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "#94A3B8",
+    marginBottom: 4,
+  },
+  detailValue: {
+    fontSize: 16,
+    color: "#ffffff",
+    fontWeight: "500",
+  },
+  detailDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginLeft: 56,
   },
   organizerCard: {
     borderRadius: 16,
@@ -616,76 +1026,6 @@ const styles = StyleSheet.create({
     padding: 4,
     marginLeft: 6,
   },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  participantsCount: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(124, 58, 237, 0.2)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  participantsCountText: {
-    color: "#7C3AED",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  participantsCard: {
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    padding: 16,
-    gap: 12,
-  },
-  participantItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.05)",
-  },
-  participantAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(124, 58, 237, 0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  participantInitial: {
-    fontSize: 12,
-    fontWeight: "bold",
-    color: "#7C3AED",
-  },
-  participantAddress: {
-    flex: 1,
-    fontSize: 14,
-    color: "#ffffff",
-  },
-  tagsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  tag: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-  },
-  tagText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "500",
-  },
   participateContainer: {
     position: "absolute",
     bottom: 0,
@@ -714,6 +1054,9 @@ const styles = StyleSheet.create({
   },
   participatingButton: {
     backgroundColor: "#10B981",
+  },
+  pastEventButton: {
+    backgroundColor: "#6B7280",
   },
   loadingButton: {
     opacity: 0.7,
@@ -766,5 +1109,15 @@ const styles = StyleSheet.create({
     color: "#10B981",
     fontSize: 14,
     fontWeight: "500",
+  },
+  fallbackMapContainer: {
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fallbackMapText: {
+    color: "#ffffff",
+    marginTop: 8,
+    fontSize: 14,
   },
 })
