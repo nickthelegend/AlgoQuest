@@ -206,7 +206,7 @@ export default function EventsScreen() {
   }
 
   const handleHostEvent = () => {
-    router.push("/events/create")
+    router.push("/(events)/create")
   }
 
   const filteredEvents =
@@ -335,7 +335,7 @@ export default function EventsScreen() {
             {filteredEvents.length > 0 ? (
               filteredEvents.map((event, index) => (
                 <Animated.View key={event.id} entering={FadeInDown.delay(500 + index * 100).springify()}>
-                  <TouchableOpacity>
+                  <TouchableOpacity onPress={() => router.push(`/(events)/event?id=${event.id}`)}>
                     {/* Event Card */}
                     <BlurView intensity={40} tint="dark" style={styles.eventCard}>
                       <View style={styles.eventImageContainer}>

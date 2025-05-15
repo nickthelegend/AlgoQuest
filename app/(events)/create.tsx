@@ -17,7 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { Calendar as CalendarIcon, Clock, MapPin, ChevronLeft, Check, Tag, User, X, Users } from "lucide-react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
-import DateTimePicker from "@react-native-community/datetimepicker"
+import DateTimePickerModal from "react-native-modal-datetime-picker"
 import * as SecureStore from "expo-secure-store"
 import { router } from "expo-router"
 import MapView, { Marker } from "react-native-maps"
@@ -43,10 +43,10 @@ export default function CreateEventScreen() {
   // Date and time state
   const [startDate, setStartDate] = useState(new Date())
   const [endDate, setEndDate] = useState(new Date(Date.now() + 2 * 60 * 60 * 1000)) // 2 hours from now
-  const [showStartDatePicker, setShowStartDatePicker] = useState(false)
-  const [showStartTimePicker, setShowStartTimePicker] = useState(false)
-  const [showEndDatePicker, setShowEndDatePicker] = useState(false)
-  const [showEndTimePicker, setShowEndTimePicker] = useState(false)
+  const [isStartDatePickerVisible, setStartDatePickerVisible] = useState(false)
+  const [isStartTimePickerVisible, setStartTimePickerVisible] = useState(false)
+  const [isEndDatePickerVisible, setEndDatePickerVisible] = useState(false)
+  const [isEndTimePickerVisible, setEndTimePickerVisible] = useState(false)
 
   // Map state
   const [showMap, setShowMap] = useState(false)
@@ -77,43 +77,95 @@ export default function CreateEventScreen() {
     }
   }
 
-  const handleStartDateChange = (event, selectedDate) => {
-    const currentDate = selectedDate || startDate
-    setShowStartDatePicker(false)
-    setStartDate(currentDate)
+  // Start date picker handlers
+  const showStartDatePicker = () => {
+    setStartDatePickerVisible(true)
+  }
+
+  const hideStartDatePicker = () => {
+    setStartDatePickerVisible(false)
+  }
+
+  const handleStartDateConfirm = (date) => {
+    // Keep the time from the current startDate
+    const newDate = new Date(date)
+    newDate.setHours(startDate.getHours(), startDate.getMinutes(), 0, 0)
+
+    setStartDate(newDate)
+    hideStartDatePicker()
 
     // If end date is before start date, update end date
-    if (endDate < currentDate) {
-      setEndDate(new Date(currentDate.getTime() + 2 * 60 * 60 * 1000))
+    if (endDate < newDate) {
+      const updatedEndDate = new Date(newDate)
+      updatedEndDate.setHours(newDate.getHours() + 2) // Add 2 hours
+      setEndDate(updatedEndDate)
     }
   }
 
-  const handleStartTimeChange = (event, selectedTime) => {
-    const currentTime = selectedTime || startDate
-    setShowStartTimePicker(false)
-    setStartDate(currentTime)
+  // Start time picker handlers
+  const showStartTimePicker = () => {
+    setStartTimePickerVisible(true)
+  }
+
+  const hideStartTimePicker = () => {
+    setStartTimePickerVisible(false)
+  }
+
+  const handleStartTimeConfirm = (time) => {
+    // Keep the date from the current startDate
+    const newTime = new Date(startDate)
+    newTime.setHours(time.getHours(), time.getMinutes(), 0, 0)
+
+    setStartDate(newTime)
+    hideStartTimePicker()
 
     // If end time is before start time on the same day, update end time
     if (
-      endDate < currentTime &&
-      endDate.getDate() === currentTime.getDate() &&
-      endDate.getMonth() === currentTime.getMonth() &&
-      endDate.getFullYear() === currentTime.getFullYear()
+      endDate < newTime &&
+      endDate.getDate() === newTime.getDate() &&
+      endDate.getMonth() === newTime.getMonth() &&
+      endDate.getFullYear() === newTime.getFullYear()
     ) {
-      setEndDate(new Date(currentTime.getTime() + 2 * 60 * 60 * 1000))
+      const updatedEndTime = new Date(newTime)
+      updatedEndTime.setHours(newTime.getHours() + 2) // Add 2 hours
+      setEndDate(updatedEndTime)
     }
   }
 
-  const handleEndDateChange = (event, selectedDate) => {
-    const currentDate = selectedDate || endDate
-    setShowEndDatePicker(false)
-    setEndDate(currentDate)
+  // End date picker handlers
+  const showEndDatePicker = () => {
+    setEndDatePickerVisible(true)
   }
 
-  const handleEndTimeChange = (event, selectedTime) => {
-    const currentTime = selectedTime || endDate
-    setShowEndTimePicker(false)
-    setEndDate(currentTime)
+  const hideEndDatePicker = () => {
+    setEndDatePickerVisible(false)
+  }
+
+  const handleEndDateConfirm = (date) => {
+    // Keep the time from the current endDate
+    const newDate = new Date(date)
+    newDate.setHours(endDate.getHours(), endDate.getMinutes(), 0, 0)
+
+    setEndDate(newDate)
+    hideEndDatePicker()
+  }
+
+  // End time picker handlers
+  const showEndTimePicker = () => {
+    setEndTimePickerVisible(true)
+  }
+
+  const hideEndTimePicker = () => {
+    setEndTimePickerVisible(false)
+  }
+
+  const handleEndTimeConfirm = (time) => {
+    // Keep the date from the current endDate
+    const newTime = new Date(endDate)
+    newTime.setHours(time.getHours(), time.getMinutes(), 0, 0)
+
+    setEndDate(newTime)
+    hideEndTimePicker()
   }
 
   const handleMapPress = (e) => {
@@ -154,40 +206,57 @@ export default function CreateEventScreen() {
     setIsSubmitting(true)
 
     try {
-      // Generate a unique event ID
-      const eventId = `event_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+      // Generate a unique event ID (numeric)
+      const eventId = Math.floor(Date.now() % 1000000) + Math.floor(Math.random() * 1000)
 
       // Convert dates to Unix timestamps
       const startTimestamp = Math.floor(startDate.getTime() / 1000)
       const endTimestamp = Math.floor(endDate.getTime() / 1000)
 
-      // Create event object
+      // Format data according to API requirements
       const eventData = {
-        id: eventId,
-        name: eventName,
-        description: eventDescription,
-        creator: eventCreator,
+        eventName: eventName,
         location: location,
         startTime: startTimestamp,
         endTime: endTimestamp,
+        registeredCount: 0,
+        eventId: eventId,
+        maxParticipants: Number.parseInt(capacity),
+        eventCreator: eventCreator,
+        // Additional fields that might be useful for the app
+        description: eventDescription,
         category: selectedCategory,
-        capacity: Number.parseInt(capacity),
-        attendees: [],
-        createdAt: Math.floor(Date.now() / 1000),
       }
 
-      // In a real app, you would save this to your backend
-      console.log("Event created:", eventData)
+      console.log("Submitting event data:", eventData)
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      // Make the API call
+      const response = await fetch("https://quest-generator-two.vercel.app/api/createEvent", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(eventData),
+      })
 
-      // Show success and navigate back
+      // Check if the request was successful
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        console.error("API error:", errorData || response.statusText)
+        throw new Error(errorData?.message || `Server responded with ${response.status}`)
+      }
+
+      const result = await response.json()
+      console.log("Event created successfully:", result)
+
+      // Show success message
       alert("Event created successfully!")
+
+      // Navigate back to events list
       router.back()
     } catch (error) {
       console.error("Error creating event:", error)
-      alert("Failed to create event. Please try again.")
+      alert(`Failed to create event: ${error.message || "Unknown error"}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -342,12 +411,12 @@ export default function CreateEventScreen() {
                 <View style={styles.dateTimeContainer}>
                   <Text style={styles.dateTimeLabel}>Starts</Text>
                   <View style={styles.dateTimeControls}>
-                    <TouchableOpacity style={styles.dateTimeButton} onPress={() => setShowStartDatePicker(true)}>
+                    <TouchableOpacity style={styles.dateTimeButton} onPress={showStartDatePicker}>
                       <CalendarIcon size={18} color="#94A3B8" />
                       <Text style={styles.dateTimeButtonText}>{formatDate(startDate)}</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.dateTimeButton} onPress={() => setShowStartTimePicker(true)}>
+                    <TouchableOpacity style={styles.dateTimeButton} onPress={showStartTimePicker}>
                       <Clock size={18} color="#94A3B8" />
                       <Text style={styles.dateTimeButtonText}>{formatTime(startDate)}</Text>
                     </TouchableOpacity>
@@ -358,12 +427,12 @@ export default function CreateEventScreen() {
                 <View style={styles.dateTimeContainer}>
                   <Text style={styles.dateTimeLabel}>Ends</Text>
                   <View style={styles.dateTimeControls}>
-                    <TouchableOpacity style={styles.dateTimeButton} onPress={() => setShowEndDatePicker(true)}>
+                    <TouchableOpacity style={styles.dateTimeButton} onPress={showEndDatePicker}>
                       <CalendarIcon size={18} color="#94A3B8" />
                       <Text style={styles.dateTimeButtonText}>{formatDate(endDate)}</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.dateTimeButton} onPress={() => setShowEndTimePicker(true)}>
+                    <TouchableOpacity style={styles.dateTimeButton} onPress={showEndTimePicker}>
                       <Clock size={18} color="#94A3B8" />
                       <Text style={styles.dateTimeButtonText}>{formatTime(endDate)}</Text>
                     </TouchableOpacity>
@@ -372,73 +441,48 @@ export default function CreateEventScreen() {
 
                 {formErrors.dates && <Text style={styles.errorText}>{formErrors.dates}</Text>}
 
-                {/* Date/Time Pickers (iOS) */}
-                {Platform.OS === "ios" && (
-                  <>
-                    {showStartDatePicker && (
-                      <DateTimePicker
-                        value={startDate}
-                        mode="date"
-                        display="spinner"
-                        onChange={handleStartDateChange}
-                      />
-                    )}
-                    {showStartTimePicker && (
-                      <DateTimePicker
-                        value={startDate}
-                        mode="time"
-                        display="spinner"
-                        onChange={handleStartTimeChange}
-                      />
-                    )}
-                    {showEndDatePicker && (
-                      <DateTimePicker
-                        value={endDate}
-                        mode="date"
-                        display="spinner"
-                        onChange={handleEndDateChange}
-                        minimumDate={startDate}
-                      />
-                    )}
-                    {showEndTimePicker && (
-                      <DateTimePicker value={endDate} mode="time" display="spinner" onChange={handleEndTimeChange} />
-                    )}
-                  </>
-                )}
+                {/* Modal Date/Time Pickers */}
+                <DateTimePickerModal
+                  isVisible={isStartDatePickerVisible}
+                  mode="date"
+                  onConfirm={handleStartDateConfirm}
+                  onCancel={hideStartDatePicker}
+                  date={startDate}
+                  minimumDate={new Date()}
+                  themeVariant="dark"
+                  buttonTextColorIOS="#7C3AED"
+                />
 
-                {/* Date/Time Pickers (Android) */}
-                {Platform.OS === "android" && (
-                  <>
-                    {showStartDatePicker && (
-                      <DateTimePicker
-                        value={startDate}
-                        mode="date"
-                        display="default"
-                        onChange={handleStartDateChange}
-                      />
-                    )}
-                    {showStartTimePicker && (
-                      <DateTimePicker
-                        value={startDate}
-                        mode="time"
-                        display="default"
-                        onChange={handleStartTimeChange}
-                      />
-                    )}
-                    {showEndDatePicker && (
-                      <DateTimePicker
-                        value={endDate}
-                        mode="date"
-                        display="default"
-                        onChange={handleEndDateChange}
-                        minimumDate={startDate}
-                      />
-                    )}
-                    {showEndTimePicker && (
-                      <DateTimePicker value={endDate} mode="time" display="default" onChange={handleEndTimeChange} />
-                    )}
-                  </>
-                )}
+                <DateTimePickerModal
+                  isVisible={isStartTimePickerVisible}
+                  mode="time"
+                  onConfirm={handleStartTimeConfirm}
+                  onCancel={hideStartTimePicker}
+                  date={startDate}
+                  themeVariant="dark"
+                  buttonTextColorIOS="#7C3AED"
+                />
+
+                <DateTimePickerModal
+                  isVisible={isEndDatePickerVisible}
+                  mode="date"
+                  onConfirm={handleEndDateConfirm}
+                  onCancel={hideEndDatePicker}
+                  date={endDate}
+                  minimumDate={startDate}
+                  themeVariant="dark"
+                  buttonTextColorIOS="#7C3AED"
+                />
+
+                <DateTimePickerModal
+                  isVisible={isEndTimePickerVisible}
+                  mode="time"
+                  onConfirm={handleEndTimeConfirm}
+                  onCancel={hideEndTimePicker}
+                  date={endDate}
+                  themeVariant="dark"
+                  buttonTextColorIOS="#7C3AED"
+                />
               </View>
 
               {/* Capacity */}
