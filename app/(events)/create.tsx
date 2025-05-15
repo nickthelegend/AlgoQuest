@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   View,
   Text,
@@ -11,16 +11,30 @@ import {
   Platform,
   ActivityIndicator,
   KeyboardAvoidingView,
+  Alert,
+  FlatList,
 } from "react-native"
 import { BlurView } from "expo-blur"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { Calendar as CalendarIcon, Clock, MapPin, ChevronLeft, Check, Tag, User, X, Users } from "lucide-react-native"
+import {
+  Calendar as CalendarIcon,
+  Clock,
+  MapPin,
+  ChevronLeft,
+  Check,
+  Tag,
+  User,
+  X,
+  Users,
+  Search,
+} from "lucide-react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
 import DateTimePickerModal from "react-native-modal-datetime-picker"
 import * as SecureStore from "expo-secure-store"
 import { router } from "expo-router"
-import MapView, { Marker } from "react-native-maps"
+import MapView, { PROVIDER_GOOGLE } from "react-native-maps"
+import * as Location from "expo-location"
 
 // Event categories
 const eventCategories = [
@@ -31,6 +45,234 @@ const eventCategories = [
   { id: "other", name: "Other", color: "#F59E0B" },
 ]
 
+// Sample locations for search (would be replaced with API in production)
+const sampleLocations = [
+  {
+    name: "Hyderabad Central Mall",
+    address: "Hyderabad Central Mall, Punjagutta, Hyderabad, India",
+    latitude: 17.4256,
+    longitude: 78.45,
+  },
+  {
+    name: "Charminar",
+    address: "Charminar, Hyderabad, Telangana, India",
+    latitude: 17.3616,
+    longitude: 78.4747,
+  },
+  {
+    name: "Golconda Fort",
+    address: "Golconda Fort, Hyderabad, Telangana, India",
+    latitude: 17.3833,
+    longitude: 78.4011,
+  },
+  {
+    name: "Hussain Sagar Lake",
+    address: "Hussain Sagar Lake, Hyderabad, Telangana, India",
+    latitude: 17.4239,
+    longitude: 78.4738,
+  },
+  {
+    name: "Ramoji Film City",
+    address: "Ramoji Film City, Hyderabad, Telangana, India",
+    latitude: 17.2543,
+    longitude: 78.68,
+  },
+  {
+    name: "HITEC City",
+    address: "HITEC City, Hyderabad, Telangana, India",
+    latitude: 17.4435,
+    longitude: 78.3772,
+  },
+]
+
+// Dark mode map style
+const mapStyle = [
+  {
+    elementType: "geometry",
+    stylers: [
+      {
+        color: "#212121",
+      },
+    ],
+  },
+  {
+    elementType: "labels.icon",
+    stylers: [
+      {
+        visibility: "off",
+      },
+    ],
+  },
+  {
+    elementType: "labels.text.fill",
+    stylers: [
+      {
+        color: "#757575",
+      },
+    ],
+  },
+  {
+    elementType: "labels.text.stroke",
+    stylers: [
+      {
+        color: "#212121",
+      },
+    ],
+  },
+  {
+    featureType: "administrative",
+    elementType: "geometry",
+    stylers: [
+      {
+        color: "#757575",
+      },
+    ],
+  },
+  {
+    featureType: "administrative.country",
+    elementType: "labels.text.fill",
+    stylers: [
+      {
+        color: "#9e9e9e",
+      },
+    ],
+  },
+  {
+    featureType: "administrative.land_parcel",
+    stylers: [
+      {
+        visibility: "off",
+      },
+    ],
+  },
+  {
+    featureType: "administrative.locality",
+    elementType: "labels.text.fill",
+    stylers: [
+      {
+        color: "#bdbdbd",
+      },
+    ],
+  },
+  {
+    featureType: "poi",
+    elementType: "labels.text.fill",
+    stylers: [
+      {
+        color: "#757575",
+      },
+    ],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [
+      {
+        color: "#181818",
+      },
+    ],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.fill",
+    stylers: [
+      {
+        color: "#616161",
+      },
+    ],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.stroke",
+    stylers: [
+      {
+        color: "#1b1b1b",
+      },
+    ],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.fill",
+    stylers: [
+      {
+        color: "#2c2c2c",
+      },
+    ],
+  },
+  {
+    featureType: "road",
+    elementType: "labels.text.fill",
+    stylers: [
+      {
+        color: "#8a8a8a",
+      },
+    ],
+  },
+  {
+    featureType: "road.arterial",
+    elementType: "geometry",
+    stylers: [
+      {
+        color: "#373737",
+      },
+    ],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [
+      {
+        color: "#3c3c3c",
+      },
+    ],
+  },
+  {
+    featureType: "road.highway.controlled_access",
+    elementType: "geometry",
+    stylers: [
+      {
+        color: "#4e4e4e",
+      },
+    ],
+  },
+  {
+    featureType: "road.local",
+    elementType: "labels.text.fill",
+    stylers: [
+      {
+        color: "#616161",
+      },
+    ],
+  },
+  {
+    featureType: "transit",
+    elementType: "labels.text.fill",
+    stylers: [
+      {
+        color: "#757575",
+      },
+    ],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [
+      {
+        color: "#000000",
+      },
+    ],
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.fill",
+    stylers: [
+      {
+        color: "#3d3d3d",
+      },
+    ],
+  },
+]
+
 export default function CreateEventScreen() {
   // Form state
   const [eventName, setEventName] = useState("")
@@ -39,6 +281,13 @@ export default function CreateEventScreen() {
   const [location, setLocation] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("")
   const [capacity, setCapacity] = useState("")
+  const [locationCoordinates, setLocationCoordinates] = useState({
+    latitude: 17.493151222175904,
+    longitude: 78.39227845034713,
+  })
+
+  // Map ref
+  const mapRef = useRef(null)
 
   // Date and time state
   const [startDate, setStartDate] = useState(new Date())
@@ -50,20 +299,24 @@ export default function CreateEventScreen() {
 
   // Map state
   const [showMap, setShowMap] = useState(false)
-  const [mapRegion, setMapRegion] = useState({
-    latitude: 37.78825,
-    longitude: -122.4324,
-    latitudeDelta: 0.0922,
-    longitudeDelta: 0.0421,
-  })
-  const [selectedLocation, setSelectedLocation] = useState(null)
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false)
+  const [locationPermissionGranted, setLocationPermissionGranted] = useState(false)
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchResults, setSearchResults] = useState([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [showSearchResults, setShowSearchResults] = useState(false)
 
   // UI state
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [formErrors, setFormErrors] = useState({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
     loadWalletAddress()
+    requestLocationPermission()
+    // Get location name for default coordinates
+    getLocationNameFromCoordinates(locationCoordinates.latitude, locationCoordinates.longitude)
   }, [])
 
   const loadWalletAddress = async () => {
@@ -75,6 +328,171 @@ export default function CreateEventScreen() {
     } catch (error) {
       console.error("Error loading wallet address:", error)
     }
+  }
+
+  const requestLocationPermission = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync()
+      if (status === "granted") {
+        setLocationPermissionGranted(true)
+      } else {
+        Alert.alert(
+          "Location Permission",
+          "Location permission is required to use the map feature. You can still enter a location manually.",
+          [{ text: "OK" }],
+        )
+      }
+    } catch (error) {
+      console.error("Error requesting location permission:", error)
+    }
+  }
+
+  const getCurrentLocation = async () => {
+    try {
+      setIsLoadingLocation(true)
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      })
+
+      const { latitude, longitude } = location.coords
+
+      // Update coordinates
+      setLocationCoordinates({
+        latitude,
+        longitude,
+      })
+
+      // Animate map to new location
+      if (mapRef.current) {
+        mapRef.current.animateCamera(
+          {
+            center: {
+              latitude,
+              longitude,
+            },
+          },
+          { duration: 300 },
+        )
+      }
+
+      // Get location name for current coordinates
+      getLocationNameFromCoordinates(latitude, longitude)
+
+      setIsLoadingLocation(false)
+    } catch (error) {
+      console.error("Error getting current location:", error)
+      setIsLoadingLocation(false)
+      Alert.alert("Error", "Could not get your current location. Please try again or select manually.")
+    }
+  }
+
+  const getLocationNameFromCoordinates = async (latitude, longitude) => {
+    try {
+      setIsLoadingLocation(true)
+      console.log("Getting location name for:", latitude, longitude)
+
+      const result = await Location.reverseGeocodeAsync({
+        latitude,
+        longitude,
+      })
+
+      console.log("Geocode result:", result)
+
+      if (result && result.length > 0) {
+        const address = result[0]
+        const locationName = formatAddress(address)
+        console.log("Setting location to:", locationName)
+        setLocation(locationName)
+      } else {
+        console.log("No geocode results, using coordinates")
+        setLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+      }
+      setIsLoadingLocation(false)
+    } catch (error) {
+      console.error("Error getting location name:", error)
+      setLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+      setIsLoadingLocation(false)
+    }
+  }
+
+  const handleCameraMove = (region) => {
+    // Update coordinates based on the center of the map
+    setLocationCoordinates({
+      latitude: region.latitude,
+      longitude: region.longitude,
+    })
+
+    // Get location name for the new coordinates
+    getLocationNameFromCoordinates(region.latitude, region.longitude)
+  }
+
+  const searchLocations = () => {
+    if (!searchQuery.trim()) return
+
+    setIsSearching(true)
+    setShowSearchResults(true)
+
+    // Filter sample locations based on search query
+    const results = sampleLocations.filter(
+      (loc) =>
+        loc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        loc.address.toLowerCase().includes(searchQuery.toLowerCase()),
+    )
+
+    setSearchResults(results)
+    setIsSearching(false)
+  }
+
+  const selectSearchResult = (result) => {
+    // Update coordinates
+    setLocationCoordinates({
+      latitude: result.latitude,
+      longitude: result.longitude,
+    })
+
+    // Animate map to new location
+    if (mapRef.current) {
+      mapRef.current.animateCamera(
+        {
+          center: {
+            latitude: result.latitude,
+            longitude: result.longitude,
+          },
+        },
+        { duration: 300 },
+      )
+    }
+
+    // Set location name
+    setLocation(result.address)
+
+    // Hide search results
+    setShowSearchResults(false)
+    setSearchQuery("")
+  }
+
+  const formatAddress = (address) => {
+    const components = []
+
+    if (address.name) components.push(address.name)
+    if (address.street) components.push(address.street)
+    if (address.city) components.push(address.city)
+    if (address.region) components.push(address.region)
+    if (address.country) components.push(address.country)
+
+    // If we have a detailed address, use it
+    if (components.length > 1) {
+      return components.join(", ")
+    }
+
+    // Fallback to a simpler format
+    return [address.name, address.street, [address.city, address.region].filter(Boolean).join(", "), address.country]
+      .filter(Boolean)
+      .join(", ")
+  }
+
+  const confirmLocation = () => {
+    setShowMap(false)
   }
 
   // Start date picker handlers
@@ -168,22 +586,6 @@ export default function CreateEventScreen() {
     hideEndTimePicker()
   }
 
-  const handleMapPress = (e) => {
-    setSelectedLocation(e.nativeEvent.coordinate)
-    setMapRegion({
-      ...mapRegion,
-      latitude: e.nativeEvent.coordinate.latitude,
-      longitude: e.nativeEvent.coordinate.longitude,
-    })
-  }
-
-  const confirmLocation = () => {
-    if (selectedLocation) {
-      setLocation(`${selectedLocation.latitude.toFixed(4)}, ${selectedLocation.longitude.toFixed(4)}`)
-    }
-    setShowMap(false)
-  }
-
   const validateForm = () => {
     const errors = {}
 
@@ -226,11 +628,17 @@ export default function CreateEventScreen() {
         // Additional fields that might be useful for the app
         description: eventDescription,
         category: selectedCategory,
+        coordinates: locationCoordinates
+          ? {
+              latitude: locationCoordinates.latitude,
+              longitude: locationCoordinates.longitude,
+            }
+          : null,
       }
 
       console.log("Submitting event data:", eventData)
 
-      // Make the API call
+      // Make the API call to the updated endpoint
       const response = await fetch("https://quest-generator-two.vercel.app/api/createEvent", {
         method: "POST",
         headers: {
@@ -250,13 +658,15 @@ export default function CreateEventScreen() {
       console.log("Event created successfully:", result)
 
       // Show success message
-      alert("Event created successfully!")
-
-      // Navigate back to events list
-      router.back()
+      Alert.alert("Success", "Event created successfully!", [
+        {
+          text: "OK",
+          onPress: () => router.back(),
+        },
+      ])
     } catch (error) {
       console.error("Error creating event:", error)
-      alert(`Failed to create event: ${error.message || "Unknown error"}`)
+      Alert.alert("Error", `Failed to create event: ${error.message || "Unknown error"}`, [{ text: "OK" }])
     } finally {
       setIsSubmitting(false)
     }
@@ -536,20 +946,114 @@ export default function CreateEventScreen() {
             </TouchableOpacity>
           </View>
 
-          <MapView style={styles.map} region={mapRegion} onPress={handleMapPress}>
-            {selectedLocation && <Marker coordinate={selectedLocation} title="Event Location" />}
-          </MapView>
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <View style={styles.searchInputContainer}>
+              <Search size={20} color="#94A3B8" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search for a location"
+                placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onSubmitEditing={searchLocations}
+                returnKeyType="search"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery("")} style={styles.clearButton}>
+                  <X size={16} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity
+              style={styles.searchButton}
+              onPress={searchLocations}
+              disabled={isSearching || searchQuery.length === 0}
+            >
+              {isSearching ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.searchButtonText}>Search</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Search Results */}
+          {showSearchResults && searchResults.length > 0 && (
+            <View style={styles.searchResultsContainer}>
+              <FlatList
+                data={searchResults}
+                keyExtractor={(item, index) => `location-${index}`}
+                renderItem={({ item }) => (
+                  <TouchableOpacity style={styles.searchResultItem} onPress={() => selectSearchResult(item)}>
+                    <MapPin size={16} color="#7C3AED" />
+                    <Text style={styles.searchResultText} numberOfLines={2}>
+                      {item.address}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                ItemSeparatorComponent={() => <View style={styles.searchResultSeparator} />}
+              />
+            </View>
+          )}
+
+          {isLoadingLocation ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#7C3AED" />
+              <Text style={styles.loadingText}>Getting location...</Text>
+            </View>
+          ) : (
+            <View style={styles.mapContainer}>
+              <MapView
+                ref={mapRef}
+                style={styles.map}
+                initialCamera={{
+                  center: {
+                    latitude: locationCoordinates.latitude,
+                    longitude: locationCoordinates.longitude,
+                  },
+                  pitch: 0,
+                  heading: 0,
+                  altitude: 1000,
+                  zoom: 17,
+                }}
+                provider={PROVIDER_GOOGLE}
+                showsUserLocation={locationPermissionGranted}
+                showsMyLocationButton={false}
+                customMapStyle={mapStyle}
+                onRegionChangeComplete={handleCameraMove}
+                rotateEnabled={false}
+                pitchEnabled={false}
+                scrollEnabled={true}
+                zoomEnabled={true}
+                toolbarEnabled={false}
+              />
+
+              {/* Fixed center marker */}
+              <View style={styles.markerFixed} pointerEvents="none">
+                <MapPin size={36} color="#7C3AED" />
+              </View>
+
+              {/* Location info overlay */}
+              <View style={styles.locationInfo}>
+                <Text style={styles.locationText} numberOfLines={2}>
+                  {isLoadingLocation ? "Getting location..." : location || "Move map to select location"}
+                </Text>
+              </View>
+            </View>
+          )}
 
           <View style={styles.mapFooter}>
-            <TouchableOpacity style={styles.cancelButton} onPress={() => setShowMap(false)}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+            <TouchableOpacity
+              style={styles.mapActionButton}
+              onPress={getCurrentLocation}
+              disabled={!locationPermissionGranted || isLoadingLocation}
+            >
+              <MapPin size={20} color="#ffffff" />
+              <Text style={styles.mapActionButtonText}>My Location</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.confirmButton, !selectedLocation && styles.confirmButtonDisabled]}
-              onPress={confirmLocation}
-              disabled={!selectedLocation}
-            >
+            <TouchableOpacity style={styles.confirmButton} onPress={confirmLocation} disabled={isLoadingLocation}>
               <Text style={styles.confirmButtonText}>Confirm Location</Text>
             </TouchableOpacity>
           </View>
@@ -754,8 +1258,98 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#ffffff",
   },
-  map: {
+  searchContainer: {
+    flexDirection: "row",
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    gap: 8,
+  },
+  searchInputContainer: {
     flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  searchInput: {
+    flex: 1,
+    color: "#ffffff",
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  clearButton: {
+    padding: 4,
+  },
+  searchButton: {
+    backgroundColor: "#7C3AED",
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  searchResultsContainer: {
+    maxHeight: 200,
+    backgroundColor: "rgba(0, 0, 0, 0.9)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+  },
+  searchResultItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    gap: 8,
+  },
+  searchResultText: {
+    color: "#ffffff",
+    fontSize: 14,
+    flex: 1,
+  },
+  searchResultSeparator: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginLeft: 36,
+  },
+  mapContainer: {
+    flex: 1,
+    position: "relative",
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  markerFixed: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    marginLeft: -18,
+    marginTop: -36,
+    zIndex: 2,
+  },
+  locationInfo: {
+    position: "absolute",
+    top: 16,
+    left: 16,
+    right: 16,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(124, 58, 237, 0.5)",
+  },
+  locationText: {
+    color: "#ffffff",
+    fontSize: 14,
+    textAlign: "center",
   },
   mapFooter: {
     flexDirection: "row",
@@ -764,15 +1358,17 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "rgba(255, 255, 255, 0.1)",
   },
-  cancelButton: {
+  mapActionButton: {
     flex: 1,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 12,
     paddingVertical: 16,
+    gap: 8,
   },
-  cancelButtonText: {
+  mapActionButtonText: {
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "500",
@@ -792,5 +1388,16 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#121212",
+  },
+  loadingText: {
+    color: "#ffffff",
+    marginTop: 12,
+    fontSize: 16,
   },
 })

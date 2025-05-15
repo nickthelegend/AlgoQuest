@@ -180,6 +180,7 @@ export default function EventDetailScreen() {
             latitudeDelta: 0.01,
             longitudeDelta: 0.01,
           }}
+          
         >
           <Marker
             coordinate={{
