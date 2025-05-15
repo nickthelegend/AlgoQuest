@@ -286,6 +286,8 @@ export default function CreateEventScreen() {
     longitude: 78.39227845034713,
   })
 
+  const [locationName, setLocationName] = useState("")
+
   // Map ref
   const mapRef = useRef(null)
 
@@ -400,17 +402,22 @@ export default function CreateEventScreen() {
 
       if (result && result.length > 0) {
         const address = result[0]
-        const locationName = formatAddress(address)
-        console.log("Setting location to:", locationName)
-        setLocation(locationName)
+        const formattedAddress = formatAddress(address)
+        console.log("Setting location name:", formattedAddress)
+        // Store the location name for display
+        setLocationName(formattedAddress)
+        // Store only coordinates in the location field
+        setLocation(`${latitude.toFixed(6)},${longitude.toFixed(6)}`)
       } else {
         console.log("No geocode results, using coordinates")
-        setLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+        setLocationName("")
+        setLocation(`${latitude.toFixed(6)},${longitude.toFixed(6)}`)
       }
       setIsLoadingLocation(false)
     } catch (error) {
       console.error("Error getting location name:", error)
-      setLocation(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+      setLocationName("")
+      setLocation(`${latitude.toFixed(6)},${longitude.toFixed(6)}`)
       setIsLoadingLocation(false)
     }
   }
@@ -463,8 +470,10 @@ export default function CreateEventScreen() {
       )
     }
 
-    // Set location name
-    setLocation(result.address)
+    // Set location name for display
+    setLocationName(result.address)
+    // Set only coordinates in the location field
+    setLocation(`${result.latitude.toFixed(6)},${result.longitude.toFixed(6)}`)
 
     // Hide search results
     setShowSearchResults(false)
@@ -1037,7 +1046,12 @@ export default function CreateEventScreen() {
               {/* Location info overlay */}
               <View style={styles.locationInfo}>
                 <Text style={styles.locationText} numberOfLines={2}>
-                  {isLoadingLocation ? "Getting location..." : location || "Move map to select location"}
+                  {isLoadingLocation ? "Getting location..." : locationName || "Move map to select location"}
+                </Text>
+                <Text style={styles.coordinatesText}>
+                  {isLoadingLocation
+                    ? ""
+                    : `${locationCoordinates.latitude.toFixed(6)},${locationCoordinates.longitude.toFixed(6)}`}
                 </Text>
               </View>
             </View>
@@ -1399,5 +1413,11 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     marginTop: 12,
     fontSize: 16,
+  },
+  coordinatesText: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 12,
+    textAlign: "center",
+    marginTop: 4,
   },
 })
