@@ -315,16 +315,12 @@ export default function EventDetailScreen() {
     setParticipateLoading(true)
     try {
       // Get the user's account information
-      const accountInfo = await SecureStore.getItemAsync("accountInfo")
-      if (!accountInfo) {
-        Alert.alert("Error", "Account information not found. Please recreate your wallet.", [{ text: "OK" }])
-        setParticipateLoading(false)
-        return
-      }
+      const mnemonic = await SecureStore.getItemAsync("mnemonic")
+      if (!mnemonic) throw new Error("No mnemonic found")
 
-      const account = JSON.parse(accountInfo)
+      const account = algosdk.mnemonicToSecretKey(mnemonic)
 
-      // Connect to Algorand client
+      // Initialize Algorand client
       const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
 
       // Get suggested parameters
@@ -340,16 +336,25 @@ export default function EventDetailScreen() {
 
       // For this example, we'll use a placeholder for questAssetID
       // In a real app, this would come from the event data or another source
-      const questAssetID = Number(params.questAssetID || 0)
+
+      const stringToBytes = (value: string): Uint8Array => {
+        const utf8Encoder = new TextEncoder();
+        const result = utf8Encoder.encode(value);
+        return result;
+    };
+      const boxName = new Uint8Array(33);
+      const keyPrefixBytes = stringToBytes("c");
+      boxName.set(keyPrefixBytes);
+      boxName.set(algosdk.decodeAddress(account.addr.toString()).publicKey, 1)
 
       // Create the application transaction
       const txn2 = algosdk.makeApplicationNoOpTxnFromObject({
         sender: account.addr,
         appIndex: Number(appID),
-        appArgs: [algosdk.getMethodByName(METHODS, "registerEvent").getSelector(), algosdk.encodeUint64(questAssetID)],
-        foreignAssets: [questAssetID],
-        suggestedParams: { ...suggestedParams, fee: Number(30) },
-      })
+        appArgs: [algosdk.getMethodByName(METHODS, "registerEvent").getSelector()],
+        suggestedParams: { ...suggestedParams },
+        boxes:[{appIndex:0,name:boxName}]
+          })
 
       const txns = [txn2]
 
@@ -361,7 +366,7 @@ export default function EventDetailScreen() {
       await algodClient.sendRawTransaction(signedTxns).do()
 
       // Wait for confirmation
-      await waitForConfirmation(algodClient, txId, 4)
+      const result = await algosdk.waitForConfirmation(algodClient, txId, 4)
 
       // Update UI state
       Alert.alert("Success!", "You have successfully registered for this event.", [{ text: "OK" }])
@@ -389,23 +394,7 @@ export default function EventDetailScreen() {
   }
 
   // Helper function to wait for transaction confirmation
-  const waitForConfirmation = async (algodClient, txId, timeout) => {
-    const status = await algodClient.status().do()
-    let lastRound = status["last-round"]
-
-    for (let i = 0; i < timeout; i++) {
-      const pendingInfo = await algodClient.pendingTransactionInformation(txId).do()
-
-      if (pendingInfo["confirmed-round"] !== null && pendingInfo["confirmed-round"] > 0) {
-        return pendingInfo
-      }
-
-      lastRound++
-      await algodClient.statusAfterBlock(lastRound).do()
-    }
-
-    throw new Error(`Transaction not confirmed after ${timeout} rounds`)
-  }
+  
 
   const copyAddressToClipboard = async (address) => {
     await Clipboard.setStringAsync(address)
