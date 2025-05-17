@@ -187,7 +187,7 @@ export default function CreateWalletScreen() {
       headers: {
         accept: "application/json",
         "content-type": "application/json",
-        authorization: "Bearer af0955d8aa9129a65af2bea8a3a06fb34ba3670d61409a2a21b0eedff2bc41ce",
+        authorization: "Bearer a83a11b5682068e4d95285e4391741de2a98fe522afc59082af7f298af86655e",
       },
       body: JSON.stringify({
         model: "black-forest-labs/FLUX.1-schnell-Free",

@@ -15,7 +15,7 @@ import {
   FlatList,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { Trophy, MapPin, Timer, Coins, Filter, Plus, Map, Sparkles } from "lucide-react-native"
+import { Trophy, Timer, Coins, Filter, Plus, Map, Sparkles, AlertCircle } from "lucide-react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, {
   SlideInUp,
@@ -39,7 +39,7 @@ interface Quest {
   quest_name: string | null
   description: string | null
   application_id?: string
-  quest_status: "active" | "completed" | "expired"
+  quest_status: "active" | "expired"
   rewards: {
     tokens: number
     nft?: {
@@ -61,7 +61,7 @@ export default function QuestMapScreen() {
   const [quests, setQuests] = useState<Quest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "completed" | "expired">("all")
+  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "expired">("active") // Default to active
 
   const sparkleAnim = useSharedValue(0)
 
@@ -88,14 +88,22 @@ export default function QuestMapScreen() {
       if (error) throw error
 
       if (data) {
-        // Ensure all required fields have default values
-        const sanitizedQuests = data.map((quest) => ({
-          ...quest,
-          quest_name: quest.quest_name || "Untitled Quest",
-          location_title: quest.location_title || "Unknown Location",
-          description: quest.description || "No description available",
-        }))
-        setQuests(sanitizedQuests)
+        // Process quests and determine status based on expiry_date
+        const now = new Date()
+        const processedQuests = data.map((quest) => {
+          const expiryDate = new Date(quest.expiry_date)
+          const isExpired = expiryDate < now
+
+          return {
+            ...quest,
+            quest_name: quest.quest_name || "Untitled Quest",
+            location_title: quest.location_title || "Unknown Location",
+            description: quest.description || "No description available",
+            quest_status: isExpired ? "expired" : "active", // Set status based on expiry date
+          }
+        })
+
+        setQuests(processedQuests)
       }
     } catch (err) {
       console.error("Error fetching quests:", err)
@@ -125,8 +133,6 @@ export default function QuestMapScreen() {
 
   const getStatusColor = (status: Quest["quest_status"]) => {
     switch (status) {
-      case "completed":
-        return "#4ADE80"
       case "active":
         return "#7C3AED"
       case "expired":
@@ -141,6 +147,11 @@ export default function QuestMapScreen() {
     if (activeFilter === "all") return quests
     return quests.filter((quest) => quest.quest_status === activeFilter)
   }, [quests, activeFilter])
+
+  // Count active and expired quests
+  const activeQuestsCount = useMemo(() => quests.filter((q) => q.quest_status === "active").length, [quests])
+
+  const expiredQuestsCount = useMemo(() => quests.filter((q) => q.quest_status === "expired").length, [quests])
 
   const QuestCard = React.memo(({ quest, index }: { quest: Quest; index: number }) => (
     <Animated.View entering={SlideInUp.delay(index * 100).springify()} style={styles.questCard}>
@@ -187,7 +198,7 @@ export default function QuestMapScreen() {
             </View>
             <View style={styles.metric}>
               <Coins size={14} color="#ffffff" />
-              <Text style={styles.metricText}>{quest.rewards.tokens} $CAMP</Text>
+              <Text style={styles.metricText}>{quest.rewards.tokens} $QUEST</Text>
             </View>
           </View>
         </View>
@@ -208,7 +219,7 @@ export default function QuestMapScreen() {
             <Trophy size={20} color="#7C3AED" />
           </View>
           <View>
-            <Text style={styles.statValue}>{quests.filter((q) => q.quest_status === "active").length}</Text>
+            <Text style={styles.statValue}>{activeQuestsCount}</Text>
             <Text style={styles.statLabel}>Active</Text>
           </View>
         </View>
@@ -216,12 +227,12 @@ export default function QuestMapScreen() {
         <View style={styles.statDivider} />
 
         <View style={styles.statItem}>
-          <View style={[styles.statIconContainer, { backgroundColor: "rgba(59, 130, 246, 0.3)" }]}>
-            <MapPin size={20} color="#3B82F6" />
+          <View style={[styles.statIconContainer, { backgroundColor: "rgba(148, 163, 184, 0.3)" }]}>
+            <Timer size={20} color="#94A3B8" />
           </View>
           <View>
-            <Text style={styles.statValue}>{quests.filter((q) => q.quest_status === "completed").length}</Text>
-            <Text style={styles.statLabel}>Completed</Text>
+            <Text style={styles.statValue}>{expiredQuestsCount}</Text>
+            <Text style={styles.statLabel}>Expired</Text>
           </View>
         </View>
 
@@ -229,11 +240,11 @@ export default function QuestMapScreen() {
 
         <View style={styles.statItem}>
           <View style={[styles.statIconContainer, { backgroundColor: "rgba(16, 185, 129, 0.3)" }]}>
-            <Timer size={20} color="#10B981" />
+            <Coins size={20} color="#10B981" />
           </View>
           <View>
-            <Text style={styles.statValue}>{quests.filter((q) => q.quest_status === "expired").length}</Text>
-            <Text style={styles.statLabel}>Expired</Text>
+            <Text style={styles.statValue}>{quests.reduce((total, quest) => total + quest.rewards.tokens, 0)}</Text>
+            <Text style={styles.statLabel}>Total $QUEST</Text>
           </View>
         </View>
       </LinearGradient>
@@ -256,14 +267,6 @@ export default function QuestMapScreen() {
           <Text style={[styles.filterTabText, activeFilter === "active" && styles.filterTabTextActive]}>Active</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.filterTab, activeFilter === "completed" && styles.filterTabActive]}
-          onPress={() => setActiveFilter("completed")}
-        >
-          <Text style={[styles.filterTabText, activeFilter === "completed" && styles.filterTabTextActive]}>
-            Completed
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
           style={[styles.filterTab, activeFilter === "expired" && styles.filterTabActive]}
           onPress={() => setActiveFilter("expired")}
         >
@@ -280,17 +283,30 @@ export default function QuestMapScreen() {
   const EmptyState = React.memo(() => (
     <Animated.View entering={FadeIn.delay(400).springify()} style={styles.emptyContainer}>
       <View style={styles.emptyIconContainer}>
-        <Map size={40} color="#7C3AED" />
-        <Animated.View style={[styles.emptySparkle, sparkleStyle]}>
-          <Sparkles size={20} color="#7C3AED" />
-        </Animated.View>
+        {activeFilter === "active" ? (
+          <>
+            <Map size={40} color="#7C3AED" />
+            <Animated.View style={[styles.emptySparkle, sparkleStyle]}>
+              <Sparkles size={20} color="#7C3AED" />
+            </Animated.View>
+          </>
+        ) : (
+          <AlertCircle size={40} color="#94A3B8" />
+        )}
       </View>
       <Text style={styles.emptyTitle}>No quests found</Text>
       <Text style={styles.emptyText}>
-        {activeFilter === "all" ? "Start by creating your first quest" : `No ${activeFilter} quests available`}
+        {activeFilter === "all"
+          ? "Start by creating your first quest"
+          : activeFilter === "active"
+            ? "No active quests available"
+            : "No expired quests found"}
       </Text>
-      <TouchableOpacity style={styles.emptyButton}>
-        <Text style={styles.emptyButtonText}>Create Quest</Text>
+      <TouchableOpacity
+        style={[styles.emptyButton, activeFilter !== "active" && { backgroundColor: "rgba(124, 58, 237, 0.2)" }]}
+        onPress={() => (activeFilter !== "active" ? setActiveFilter("active") : null)}
+      >
+        <Text style={styles.emptyButtonText}>{activeFilter === "active" ? "Create Quest" : "View Active Quests"}</Text>
       </TouchableOpacity>
     </Animated.View>
   ))
