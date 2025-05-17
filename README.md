@@ -19,12 +19,18 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 * [X] Interests, Create 2D NFT avatar, male or female, customize the avatar, limit the request 5 requests
 * [X] Game, Inventory,  Marketplace , in game tab
 * [ ] Challenge Nearby Battle Arena game, 
-* [ ] Quests List Out the quests that are active
+* [X] Quests List Out the quests that are active
 * [X] Send Quest Coins to an ID, Qr code should be also avaliable when click , scan qr we can also use camera to scan and send funds to that account
 * [X] DAO Back button , Create new DAO , What to do DAO, options also , yes or No --- Only Front End
-* [ ] Quest Contract, Quest Contract Signing, Server side quest contract trigger, server side quest contract distribution
-* [ ] Side Bar edit, add RPS , add chess etc, 
+* [X] Quest Contract, Quest Contract Signing, Server side quest contract trigger,
+* [X] Side Bar edit, add RPS , add chess etc, 
 * [ ] Quest Frontend changes
- 
+* [ ] Quest Winner Picking and Contract execution
+* [ ] Quest Contract Reward Distribution
+* [ ] Arena Beasts Show on the Arena after picking fix the ipfs showing
+
+
+
+
 
 
