@@ -12,6 +12,7 @@ import {
   Alert,
   Image,
   Linking,
+  ScrollView,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import MapView, { Marker, Circle, PROVIDER_GOOGLE } from "react-native-maps"
@@ -26,6 +27,7 @@ import {
   Award,
   Coins,
   ExternalLink,
+  Users,
 } from "lucide-react-native"
 import * as Location from "expo-location"
 import { getDistance } from "geolib"
@@ -38,6 +40,7 @@ import { isMockingLocation, MockLocationDetectorErrorCode } from "react-native-t
 import treasureChest from "@/assets/icons/treasure_chest.png"
 import * as SecureStore from "expo-secure-store"
 import algosdk from "algosdk"
+import { Buffer } from "buffer"
 
 const { width, height } = Dimensions.get("window")
 // Remove this constant as it's no longer needed
@@ -79,26 +82,14 @@ interface ApplicationDetails {
     winner2: string
     winner3: string
   }
+  decodedWinners?: {
+    winner1: string
+    winner2: string
+    winner3: string
+  }
   expiryDate?: number
   questTitle?: string
   questLocation?: string
-}
-
-const DUMMY_QUEST: Quest = {
-  quest_id: "1",
-  quest_name: "Library Treasure Hunt",
-  description: "Find the hidden NFT treasure in the library! Get close to the marked location to claim your reward.",
-  rewards: {
-    tokens: 100,
-    nft: {
-      name: "Exclusive Library NFT",
-    },
-  },
-  quest_status: "ongoing",
-  latitude: 17.490179,
-  longitude: 78.389298,
-  expiry_date: "2024-12-31T23:59:59+00:00",
-  timeRemaining: "2 hours left",
 }
 
 // Custom map style
@@ -213,8 +204,8 @@ export default function QMapScreen() {
     longitudeDelta: 0.01,
   })
 
-  // Animation values
-  const bottomSheetHeight = useSharedValue(400)
+  // Animation values - Increased height for expanded view to show all content
+  const bottomSheetHeight = useSharedValue(500) // Increased from 400 to 500
   const expandIconRotation = useSharedValue(180)
   const pulseAnim = useRef(new RNAnimated.Value(1)).current
 
@@ -234,6 +225,31 @@ export default function QMapScreen() {
       }
     } catch (error) {
       console.error("Error loading wallet address:", error)
+    }
+  }
+
+  // Helper function to decode ABI-encoded address
+  const decodeAddress = (encodedAddress: string): string => {
+    try {
+      if (!encodedAddress || encodedAddress === "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=") {
+        return "No winner yet"
+      }
+
+      // Convert base64 to Uint8Array
+      const buffer = Buffer.from(encodedAddress, "base64")
+
+      // Use ABI decoder to extract the address
+      const abiType = algosdk.ABIType.from("(address)")
+      const decoded = abiType.decode(buffer)
+
+      if (decoded && decoded.length > 0) {
+        return decoded[0]
+      }
+
+      return "Invalid address"
+    } catch (error) {
+      console.error("Error decoding address:", error)
+      return "Error decoding"
     }
   }
 
@@ -295,13 +311,24 @@ export default function QMapScreen() {
         const questTitleKey = globalState.find((item) => item.key === "cXVlc3RUaXRsZQ==")
         const questLocationKey = globalState.find((item) => item.key === "cXVlc3RMb2NhdGlvbg==")
 
+        // Get encoded winner values
+        const winner1 = winner1Key?.value?.bytes || ""
+        const winner2 = winner2Key?.value?.bytes || ""
+        const winner3 = winner3Key?.value?.bytes || ""
+
         // Create application details object
         const details: ApplicationDetails = {
           rewardAssetId: rewardAssetId,
           winners: {
-            winner1: winner1Key?.value?.bytes || "",
-            winner2: winner2Key?.value?.bytes || "",
-            winner3: winner3Key?.value?.bytes || "",
+            winner1,
+            winner2,
+            winner3,
+          },
+          // Add decoded winners
+          decodedWinners: {
+            winner1: decodeAddress(winner1),
+            winner2: decodeAddress(winner2),
+            winner3: decodeAddress(winner3),
           },
           expiryDate: expiryDateKey?.value?.uint,
           questTitle: questTitleKey?.value?.bytes,
@@ -312,14 +339,13 @@ export default function QMapScreen() {
 
         // Check if current user is a winner
         if (walletAddress) {
-          // This is a simplified check - in reality you'd need to decode the base64 address
+          // Check against decoded addresses
           const isUserWinner =
-            (winner1Key?.value?.bytes !== "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &&
-              winner1Key?.value?.bytes.includes(walletAddress.substring(0, 8))) ||
-            (winner2Key?.value?.bytes !== "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &&
-              winner2Key?.value?.bytes.includes(walletAddress.substring(0, 8))) ||
-            (winner3Key?.value?.bytes !== "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &&
-              winner3Key?.value?.bytes.includes(walletAddress.substring(0, 8)))
+            (details.decodedWinners?.winner1 !== "No winner yet" &&
+              details.decodedWinners?.winner1 === walletAddress) ||
+            (details.decodedWinners?.winner2 !== "No winner yet" &&
+              details.decodedWinners?.winner2 === walletAddress) ||
+            (details.decodedWinners?.winner3 !== "No winner yet" && details.decodedWinners?.winner3 === walletAddress)
 
           setIsWinner(isUserWinner)
         }
@@ -481,7 +507,7 @@ export default function QMapScreen() {
     const newValue = !isExpanded
     setIsExpanded(newValue)
     // Adjust height to ensure buttons are visible even when collapsed
-    bottomSheetHeight.value = withSpring(newValue ? 400 : 200, { damping: 15 })
+    bottomSheetHeight.value = withSpring(newValue ? 500 : 200, { damping: 15 }) // Increased from 400 to 500
     expandIconRotation.value = withTiming(newValue ? 180 : 0, { duration: 300 })
   }
 
@@ -567,6 +593,20 @@ export default function QMapScreen() {
     }
   }
 
+  // Helper function to format wallet address for display
+  const formatAddress = (address: string) => {
+    if (!address || address === "No winner yet") return address
+    if (address === "Invalid address" || address === "Error decoding") return address
+
+    // Format the address for display (first 6 chars + ... + last 4 chars)
+    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`
+  }
+
+  // Helper function to check if an address is the current user
+  const isCurrentUser = (address: string) => {
+    return walletAddress && address === walletAddress
+  }
+
   // Update the focusOnQuest function to use quest location
   const focusOnQuest = () => {
     if (!quest) return
@@ -649,7 +689,7 @@ export default function QMapScreen() {
 
         // Create box name for the application
         const appID = quest.application_id
-        if (!appID || !appDetails?.rewardAssetId) {
+        if (!appID) {
           Alert.alert("Error", "No application ID found for this quest")
           return
         }
@@ -664,7 +704,7 @@ export default function QMapScreen() {
           appIndex: Number(appID),
           appArgs: [algosdk.getMethodByName(METHODS, "claimReward").getSelector()],
           suggestedParams: { ...suggestedParams, fee: 2000 },
-          foreignAssets: [BigInt(appDetails?.rewardAssetId), BigInt(734399300)],
+          foreignAssets: [BigInt(739714677), BigInt(734399300)],
         })
 
         const txns = [txn2]
@@ -899,7 +939,7 @@ export default function QMapScreen() {
 
           {/* Quest Description - Only show if expanded */}
           {isExpanded && (
-            <View style={styles.questContent}>
+            <ScrollView style={styles.questContent} showsVerticalScrollIndicator={false}>
               <Text style={styles.questDescription} numberOfLines={2}>
                 {quest.description}
               </Text>
@@ -934,7 +974,62 @@ export default function QMapScreen() {
                   </TouchableOpacity>
                 )}
               </View>
-            </View>
+
+              {/* Winners Card */}
+              {appDetails?.decodedWinners && (
+                <View style={styles.winnersCard}>
+                  <View style={styles.winnersHeader}>
+                    <Users size={18} color="#F59E0B" />
+                    <Text style={styles.winnersTitle}>Winners</Text>
+                  </View>
+
+                  <View style={styles.winnerRow}>
+                    <View style={styles.winnerBadge}>
+                      <Text style={styles.winnerNumber}>1</Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.winnerAddress,
+                        isCurrentUser(appDetails.decodedWinners.winner1) && styles.currentUserAddress,
+                      ]}
+                    >
+                      {formatAddress(appDetails.decodedWinners.winner1)}
+                      {isCurrentUser(appDetails.decodedWinners.winner1) && " (You)"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.winnerRow}>
+                    <View style={styles.winnerBadge}>
+                      <Text style={styles.winnerNumber}>2</Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.winnerAddress,
+                        isCurrentUser(appDetails.decodedWinners.winner2) && styles.currentUserAddress,
+                      ]}
+                    >
+                      {formatAddress(appDetails.decodedWinners.winner2)}
+                      {isCurrentUser(appDetails.decodedWinners.winner2) && " (You)"}
+                    </Text>
+                  </View>
+
+                  <View style={styles.winnerRow}>
+                    <View style={styles.winnerBadge}>
+                      <Text style={styles.winnerNumber}>3</Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.winnerAddress,
+                        isCurrentUser(appDetails.decodedWinners.winner3) && styles.currentUserAddress,
+                      ]}
+                    >
+                      {formatAddress(appDetails.decodedWinners.winner3)}
+                      {isCurrentUser(appDetails.decodedWinners.winner3) && " (You)"}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
           )}
 
           {/* Action Buttons - ALWAYS VISIBLE */}
@@ -1233,6 +1328,10 @@ const styles = StyleSheet.create({
   winnerAddress: {
     color: "#ffffff",
     fontSize: 14,
+  },
+  currentUserAddress: {
+    color: "#4ADE80",
+    fontWeight: "bold",
   },
 
   // Action Buttons - FIXED POSITION AT BOTTOM
