@@ -413,13 +413,13 @@ export default function WalletScreen() {
             <Text style={styles.quickActionSubtitle}>{transactionCount} transactions</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push("/wallet-backup")}>
+          {/* <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push("/wallet-backup")}>
             <View style={[styles.quickActionIcon, { backgroundColor: "rgba(79, 70, 229, 0.1)" }]}>
               <Shield size={24} color="#4F46E5" />
             </View>
             <Text style={styles.quickActionTitle}>Backup Wallet</Text>
             <Text style={styles.quickActionSubtitle}>Secure your funds</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
           <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push("/[sidebar)/wallet-settings")}>
             <View style={[styles.quickActionIcon, { backgroundColor: "rgba(236, 72, 153, 0.1)" }]}>
