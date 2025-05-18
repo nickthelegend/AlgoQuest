@@ -27,6 +27,7 @@ import {
   Shield,
   Zap,
   Gift,
+  QrCode,
 } from "lucide-react-native"
 import { useState, useEffect } from "react"
 import * as Clipboard from "expo-clipboard"
@@ -278,6 +279,9 @@ export default function WalletScreen() {
   const toggleQRCode = () => {
     setShowQR(!showQR)
   }
+  const openQRScanner = () => {
+    router.push("/(connect-app)/qr")
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -423,6 +427,13 @@ export default function WalletScreen() {
             </View>
             <Text style={styles.quickActionTitle}>Wallet Settings</Text>
             <Text style={styles.quickActionSubtitle}>Customize options</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickActionCard} onPress={openQRScanner}>
+            <View style={[styles.quickActionIcon, { backgroundColor: "rgba(16, 185, 129, 0.1)" }]}>
+              <QrCode size={24} color="#10B981" />
+            </View>
+            <Text style={styles.quickActionTitle}>Connect App</Text>
+            <Text style={styles.quickActionSubtitle}>Scan QR code</Text>
           </TouchableOpacity>
         </View>
 
