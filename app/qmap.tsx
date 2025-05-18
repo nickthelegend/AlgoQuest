@@ -33,12 +33,19 @@ import { LinearGradient } from "expo-linear-gradient"
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated"
 import { router, useLocalSearchParams } from "expo-router"
 import { supabase } from "@/lib/supabase"
+// Add import at the top
 import { isMockingLocation, MockLocationDetectorErrorCode } from "react-native-turbo-mock-location-detector"
 import treasureChest from "@/assets/icons/treasure_chest.png"
 import * as SecureStore from "expo-secure-store"
 import algosdk from "algosdk"
 
 const { width, height } = Dimensions.get("window")
+// Remove this constant as it's no longer needed
+// const LIBRARY_LOCATION = {
+//   latitude: 17.490179,
+//   longitude: 78.389298,
+// }
+
 const GEOFENCE_RADIUS = 50 // 50 meters radius
 
 const northEast = { latitude: 17.49617, longitude: 78.39486 }
@@ -75,6 +82,23 @@ interface ApplicationDetails {
   expiryDate?: number
   questTitle?: string
   questLocation?: string
+}
+
+const DUMMY_QUEST: Quest = {
+  quest_id: "1",
+  quest_name: "Library Treasure Hunt",
+  description: "Find the hidden NFT treasure in the library! Get close to the marked location to claim your reward.",
+  rewards: {
+    tokens: 100,
+    nft: {
+      name: "Exclusive Library NFT",
+    },
+  },
+  quest_status: "ongoing",
+  latitude: 17.490179,
+  longitude: 78.389298,
+  expiry_date: "2024-12-31T23:59:59+00:00",
+  timeRemaining: "2 hours left",
 }
 
 // Custom map style
@@ -178,6 +202,7 @@ export default function QMapScreen() {
   const [isWinner, setIsWinner] = useState<boolean>(false)
   const [claimLoading, setClaimLoading] = useState(false)
   const mapRef = useRef<MapView>(null)
+  // Add state for mock location
   const [isMockLocation, setIsMockLocation] = useState(false)
 
   // Default region
@@ -188,7 +213,7 @@ export default function QMapScreen() {
     longitudeDelta: 0.01,
   })
 
-  // Animation values - Increased default height to ensure buttons are visible
+  // Animation values
   const bottomSheetHeight = useSharedValue(400)
   const expandIconRotation = useSharedValue(180)
   const pulseAnim = useRef(new RNAnimated.Value(1)).current
@@ -542,7 +567,7 @@ export default function QMapScreen() {
     }
   }
 
-  // Focus on quest location
+  // Update the focusOnQuest function to use quest location
   const focusOnQuest = () => {
     if (!quest) return
 
@@ -560,7 +585,7 @@ export default function QMapScreen() {
     })
   }
 
-  // Handle claim reward
+  // Update the handleClaimReward function to implement the Algorand transaction
   const handleClaimReward = async () => {
     if (!location || !quest) {
       Alert.alert(
@@ -605,25 +630,65 @@ export default function QMapScreen() {
       setIsWithinGeofence(withinGeofence)
 
       if (withinGeofence) {
-        // Here you would implement the actual claim logic
-        // For now, just show success message
+        // Get wallet credentials
+        const mnemonic = await SecureStore.getItemAsync("mnemonic")
+        if (!mnemonic) {
+          Alert.alert("Error", "No wallet credentials found")
+          return
+        }
+
+        const account = algosdk.mnemonicToSecretKey(mnemonic)
+        console.log(`Using wallet address: ${account.addr}`)
+
+        // Initialize Algorand client
+        const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
+
+        // Get suggested parameters for the transaction
+        const suggestedParams = await algodClient.getTransactionParams().do()
+        console.log("Got suggested params from network")
+
+        // Create box name for the application
+        const appID = quest.application_id
+        if (!appID || !appDetails?.rewardAssetId) {
+          Alert.alert("Error", "No application ID found for this quest")
+          return
+        }
+
+        // Use the exact transaction code provided
+        const METHODS = [
+          new algosdk.ABIMethod({ name: "claimReward", desc: "", args: [], returns: { type: "void", desc: "" } }),
+        ]
+
+        const txn2 = algosdk.makeApplicationNoOpTxnFromObject({
+          sender: account.addr,
+          appIndex: Number(appID),
+          appArgs: [algosdk.getMethodByName(METHODS, "claimReward").getSelector()],
+          suggestedParams: { ...suggestedParams, fee: 2000 },
+          foreignAssets: [BigInt(appDetails?.rewardAssetId), BigInt(734399300)],
+        })
+
+        const txns = [txn2]
+        console.log("Transaction created, signing...")
+
+        // Sign the transaction
+        const signedTxns = txns.map((txn) => txn.signTxn(account.sk))
+        const txId = txn2.txID()
+        console.log(`Transaction ID: ${txId}`)
+
+        // Send the signed transaction
+        console.log("Sending transaction to network...")
+        await algodClient.sendRawTransaction(signedTxns).do()
+
+        // Wait for confirmation
+        console.log("Waiting for confirmation...")
+        const result = await algosdk.waitForConfirmation(algodClient, txId, 4)
+        console.log("Transaction confirmed:", result)
+
         Alert.alert(
           "🎉 Quest Complete!",
-          `Congratulations! You've earned:\n\n• ${quest.rewards.tokens} $CAMP tokens${quest.rewards.nft ? `\n• ${quest.rewards.nft.name}` : ""}`,
-          [
-            {
-              text: "Claim Rewards",
-              style: "default",
-              onPress: () => {
-                // Here you would typically call your API to process the reward
-                Alert.alert("💫 Success", "Your rewards have been credited to your wallet!", [{ text: "OK" }], {
-                  cancelable: false,
-                })
-              },
-            },
-            { text: "Cancel", style: "cancel" },
-          ],
-          { cancelable: true },
+          `Congratulations! You've claimed your rewards!\n\nTransaction ID: ${txId.substring(0, 8)}...${txId.substring(txId.length - 8)}`,
+          [{ text: "OK" }],
+          { cancelable: false },
         )
       } else {
         Alert.alert(
@@ -647,7 +712,8 @@ export default function QMapScreen() {
         )
       }
     } catch (error) {
-      Alert.alert("❌ Error", "Failed to verify location. Please try again.", [{ text: "OK", style: "cancel" }], {
+      console.error("Error claiming reward:", error)
+      Alert.alert("❌ Error", "Failed to claim reward. Please try again.", [{ text: "OK", style: "cancel" }], {
         cancelable: true,
       })
     } finally {
@@ -655,7 +721,6 @@ export default function QMapScreen() {
     }
   }
 
-  // Render loading state
   if (!quest) {
     return (
       <SafeAreaView style={styles.container}>
@@ -677,9 +742,22 @@ export default function QMapScreen() {
         showsMyLocationButton={false}
         provider={PROVIDER_GOOGLE}
         customMapStyle={MAP_STYLE}
-        minZoomLevel={17}
+        minZoomLevel={17} // Increased minimum zoom level to prevent zooming out too far
         maxZoomLevel={20}
         mapPadding={{ top: 20, right: 20, bottom: 20, left: 20 }}
+        // onRegionChange={(newRegion) => {
+        //   // Prevent zooming out beyond the maximum allowed delta
+        //   if (newRegion.latitudeDelta > maxLatitudeDelta || newRegion.longitudeDelta > maxLongitudeDelta) {
+        //     mapRef.current?.animateToRegion(
+        //       {
+        //         ...newRegion,
+        //         latitudeDelta: maxLatitudeDelta,
+        //         longitudeDelta: maxLongitudeDelta,
+        //       },
+        //       100,
+        //     )
+        //   }
+        // }}
         onRegionChangeComplete={(newRegion) => {
           // Enforce boundaries
           const restrictedRegion = { ...newRegion }
@@ -717,6 +795,7 @@ export default function QMapScreen() {
         }}
       >
         {/* Geofence Circle */}
+        {/* Update the MapView Circle component to use quest location */}
         <Circle
           center={{
             latitude: quest.latitude,
@@ -729,6 +808,7 @@ export default function QMapScreen() {
         />
 
         {/* Quest Marker */}
+        {/* Update the Marker component to use quest location */}
         <Marker
           coordinate={{
             latitude: quest.latitude,
@@ -741,7 +821,6 @@ export default function QMapScreen() {
         </Marker>
       </MapView>
 
-      {/* Back Button */}
       <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
         <View style={styles.backButtonContent}>
           <LinearGradient colors={["#1F1F1F", "#000000"]} style={StyleSheet.absoluteFill} />
@@ -777,7 +856,7 @@ export default function QMapScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Bottom Quest Info Box - REDESIGNED */}
+      {/* Bottom Quest Info Box */}
       <Animated.View style={[styles.bottomSheet, animatedBottomSheetStyle]}>
         <View style={styles.bottomSheetContent}>
           <LinearGradient
