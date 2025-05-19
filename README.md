@@ -1,7 +1,111 @@
-# nickthelegend's AlgoQuest 👋
-![Image](https://github.com/user-attachments/assets/26cc595e-daf1-4d69-a995-920a5213f95b)
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+![Image](https://github.com/user-attachments/assets/89cc9c2e-d389-4eda-9c82-6d24e26224d5)
+---
+**AlgoQuest** is a real-time, PvP multiplayer mobile game built on the **Algorand blockchain**. Players explore a real-world map, battle others using unique NFT beasts, and earn **Quest Coins** to unlock rewards, merch, and evolution features. The game combines elements of Pokémon Go, Tamagotchi, and Web3 gaming to create a highly engaging and socially interactive experience.
 
+---
+
+## 🐉 Game Highlights
+
+![Image](https://github.com/user-attachments/assets/4f2840d1-0568-4c4d-ad23-02e243ff0753)
+
+### ⚔️ 1v1 Real-Time Battles
+
+Challenge other players to real-time, one-on-one beast battles. Strategy, timing, and evolution matter. Battles can be triggered:
+
+* Through the internet (PvP matchmaking)
+* Locally via **Bluetooth** for IRL social gameplay
+
+### 🧬 Unique NFT Beasts
+
+* Mint your own **beast NFTs** on the Algorand blockchain
+* Beasts are trainable and **evolvable**
+* Ownership is decentralized and permanent
+
+### 🌍 Real-World Exploration
+![Image](https://github.com/user-attachments/assets/4bfd5fe7-a0e3-44ea-8a32-c557cb0efc5c)
+* Integrated with real-world maps (via GPS)
+* Players can find and open **treasure chests** at marked locations
+* Rewards include Quest Coins and rare collectibles
+
+### 💰 Quest Coins & Merch Rewards
+
+* Earn **Quest Coins** by winning battles and completing treasure hunts
+* Redeem coins for **exclusive merch** like t-shirts, mugs, bottles, and more
+
+---
+
+## 🛠️ Tech Stack
+
+* **Frontend**: React Native + Expo
+* **Backend**: Supabase (auth + storage), Algorand smart contracts
+* **Smart Contracts**: Written in TEAL/PyTeal for minting, evolution, and token management
+* **Location Services**: GPS + geofencing for treasure and IRL event triggers
+* **Connectivity**: WebRTC / Bluetooth for real-time local battles
+* **Connect Wallet**: WebSockets
+
+---
+
+## 📦 Features Overview
+
+| Feature           | Description                                                     |
+| ----------------- | --------------------------------------------------------------- |
+| Real-time PvP     | Battle anyone live, locally or globally                         |
+| NFT Beast Minting | Unique blockchain-based beast ownership and evolution           |
+| Treasure Hunts    | Go to specific physical locations to unlock chests and loot     |
+| Social Play       | Bluetooth battles encourage real-life meetups                   |
+| Coin Economy      | Earn and spend Quest Coins on upgrades, evolutions, and rewards |
+| Merch Integration | Exchange in-game currency for real-world goodies                |
+
+---
+
+## 🚀 Getting Started
+
+1. **Clone the Repo**
+
+   ```bash
+   git clone https://github.com/nickthelegend/AlgoQuest
+   cd AlgoQuest
+   ```
+
+2. **Install Dependencies**
+
+   ```bash
+   npm install
+   ```
+
+3. **Start the App**
+
+   ```bash
+   npm start
+   ```
+
+   Use an Android/iOS device or emulator via Expo Go.
+
+---
+
+## 🧱 Folder Structure
+
+* `/app` - Main screens and navigation
+* `/components` - Reusable UI elements
+* `/contracts` - Smart contract logic (Algorand)
+* `/hooks` - Custom logic (Bluetooth, geolocation, etc.)
+* `/context` - Global state management
+* `/assets` - Icons, images, fonts
+* `/lib` - Utility libraries and helpers
+
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions. If you’re a game dev, smart contract wizard, or mobile UI/UX nerd — join us.
+
+   * 1 Fork the repo 
+   * 2 Create your feature branch 
+   * 3 Submit a PR
+---
+
+# To-do:
 * [ ] Edit the Connections, make it guestures , dragable guestures
 * [X] Add Functionality to Send and recieve ,
 * [X] Add the Quest Tokens, Index the Assets and show the number of NFTs.
@@ -28,6 +132,21 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 * [ ] Quest Winner Picking and Contract execution
 * [ ] Quest Contract Reward Distribution
 * [ ] Arena Beasts Show on the Arena after picking fix the ipfs showing
+
+---
+
+## 🌐 Links
+
+* 🔗 [Official Website](#) — *Coming soon*
+* 📣 [Twitter](#) — Game updates and announcements
+* 🎮 [TestNet Faucet](#) — Get free ALGO for testing
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
+
+---
 
 
 
