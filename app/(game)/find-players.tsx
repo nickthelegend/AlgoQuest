@@ -12,7 +12,6 @@ import {
   Platform,
   Modal,
   FlatList,
-  Linking,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
@@ -122,6 +121,22 @@ export default function FindPlayersScreen() {
     }
 
     requestNotificationPermissions()
+
+    // Set up notification handler for deep links
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      if (response.notification.request.content.data?.url) {
+        const url = response.notification.request.content.data.url as string
+        // Handle the deep link URL
+        router.push(url)
+      }
+    })
+
+    return () => {
+      if (scanning) {
+        stopScanning()
+      }
+      subscription.remove()
+    }
   }, [])
 
   // Initialize permissions and load username and wallet address
@@ -194,14 +209,16 @@ export default function FindPlayersScreen() {
       console.log("Battle invitation received from:", data.name)
       setDebugInfo((prev) => prev + `\nInvitation received: ${JSON.stringify(data)}`)
 
+      // Extract the sender wallet address from the payload (deep link)
+      const senderWalletAddress = data.payload || ""
+
       // Schedule a local notification to alert the user with deep link
       Notifications.scheduleNotificationAsync({
         content: {
           title: "Battle Challenge",
           body: `${data.name} wants to battle with you!`,
           data: {
-            senderWalletAddress: data.name, // Using name field to pass wallet address
-            url: `exp+algoquest:///(game)/confirm?=${data.name}`,
+            url: `exp://exp.host/@username/app/--/game/confirm?sender=${senderWalletAddress}`,
           },
         },
         trigger: null, // sends the notification immediately
@@ -219,7 +236,13 @@ export default function FindPlayersScreen() {
           },
           {
             text: "Accept",
-            onPress: () => router.push(`/(game)/confirm?sender=${data.name}`),
+            onPress: () => {
+              // Navigate to confirm screen with sender wallet address
+              router.push({
+                pathname: "/(game)/confirm",
+                params: { sender: senderWalletAddress },
+              })
+            },
           },
         ],
         { cancelable: false },
@@ -249,22 +272,12 @@ export default function FindPlayersScreen() {
       setConnectedPeerId(null)
     })
 
-    // Set up notification response handler for deep links
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const url = response.notification.request.content.data?.url
-      if (url) {
-        console.log("Opening deep link from notification:", url)
-        Linking.openURL(url)
-      }
-    })
-
     return () => {
       onPeerFoundListener()
       onPeerLostListener()
       onInvitationListener()
       onConnectedListener()
       onDisconnectedListener()
-      subscription.remove()
     }
   }, [permissionsGranted])
 
@@ -574,8 +587,7 @@ export default function FindPlayersScreen() {
         text: "Cancel",
         style: "cancel",
       },
-      {           
-
+      {
         text: "Challenge",
         onPress: async () => {
           try {
@@ -584,20 +596,15 @@ export default function FindPlayersScreen() {
               console.log("Self-testing notification...")
               setDebugInfo((prev) => prev + `\nSelf-testing notification...`)
 
-              // Create deep link URL with wallet address
+              // Create a deep link URL with the wallet address
               const deepLinkUrl = `exp+algoquest:///(game)/confirm?=${walletAddress}`
-              console.log("Generated deep link:", deepLinkUrl)
-              setDebugInfo((prev) => prev + `\nGenerated deep link: ${deepLinkUrl}`)
 
-              // Directly trigger a notification for testing with deep link
+              // Directly trigger a notification for testing
               await Notifications.scheduleNotificationAsync({
                 content: {
                   title: "Battle Challenge",
                   body: `${username} wants to battle with you!`,
-                  data: {
-                    senderWalletAddress: walletAddress,
-                    url: deepLinkUrl,
-                  },
+                  data: { url: deepLinkUrl },
                 },
                 trigger: null, // sends the notification immediately
               })
@@ -613,7 +620,11 @@ export default function FindPlayersScreen() {
                   },
                   {
                     text: "Accept",
-                    onPress: () => router.push(`/(game)/confirm?sender=${walletAddress}`),
+                    onPress: () =>
+                      router.push({
+                        pathname: "/(game)/confirm",
+                        params: { sender: walletAddress },
+                      }),
                   },
                 ],
                 { cancelable: false },
@@ -631,8 +642,11 @@ export default function FindPlayersScreen() {
               throw new Error("Invalid player ID")
             }
 
-            // Send battle invitation to the player with wallet address as identifier
-            await NearbyConnections.requestConnection(player.id, walletAddress)
+            // Create a deep link URL with the wallet address
+            const deepLinkUrl = `exp+algoquest:///(game)/confirm?=${walletAddress}`
+
+            // Send battle invitation to the player with the deep link URL
+            await NearbyConnections.requestConnection(player.id, deepLinkUrl)
 
             // Show a toast or alert that the challenge was sent
             Alert.alert("Challenge Sent", `Challenge sent to ${player.name}. Waiting for response...`)
@@ -947,7 +961,7 @@ export default function FindPlayersScreen() {
               </>
             ) : (
               <View style={styles.noBeasts}>
-                <Text style={styles.noBeatsText}>You don't have any beasts yet. Create one to start battling!</Text>
+                <Text style={styles.noBeastsText}>You don't have any beasts yet. Create one to start battling!</Text>
                 <TouchableOpacity
                   style={styles.createBeastButton}
                   onPress={() => {
@@ -1348,7 +1362,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 24,
   },
-  noBeatsText: {
+  noBeastsText: {
     fontSize: 16,
     color: "rgba(255, 255, 255, 0.6)",
     marginBottom: 24,
