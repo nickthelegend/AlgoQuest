@@ -34,7 +34,7 @@ interface Beast {
   name: string
   power: number
   element: string
-  image: string
+  image_url: string // Changed from image to image_url
   owner_id: string
 }
 
@@ -50,8 +50,24 @@ interface Player {
     name: string
     power: number
     element: string
-    image: string
+    image_url: string // Changed from image to image_url
   }
+}
+
+// Helper function to get the full image URL
+const getImageUrl = (imageUrl: string | undefined) => {
+  if (!imageUrl) return "/placeholder.svg?height=100&width=100"
+
+  // If it's already a full URL, return it
+  if (imageUrl.startsWith("http")) return imageUrl
+
+  // If it's an IPFS hash, construct the full URL
+  if (imageUrl.startsWith("Qm") || imageUrl.startsWith("baf")) {
+    return `https://gateway.pinata.cloud/ipfs/${imageUrl}`
+  }
+
+  // Otherwise return as is
+  return imageUrl
 }
 
 async function checkAndRequestPermissions(): Promise<boolean> {
@@ -190,7 +206,7 @@ export default function FindPlayersScreen() {
             name: "Mystery Beast",
             power: Math.floor(Math.random() * 10000),
             element: ["Fire", "Water", "Earth", "Air", "Light", "Dark"][Math.floor(Math.random() * 6)],
-            image: "/placeholder.svg?height=100&width=100",
+            image_url: "/placeholder.svg?height=100&width=100",
           },
         }
 
@@ -490,7 +506,7 @@ export default function FindPlayersScreen() {
           name: selectedBeast.name,
           power: selectedBeast.power,
           element: selectedBeast.element,
-          image: selectedBeast.image,
+          image_url: selectedBeast.image_url,
         },
       }
 
@@ -715,15 +731,16 @@ export default function FindPlayersScreen() {
       onPress={() => handleSelectBeast(item)}
     >
       <Image
-        source={{ uri: item.image || "/placeholder.svg?height=100&width=100" }}
+        source={{ uri: getImageUrl(item.image_url) }}
         style={styles.beastSelectorImage}
+        onError={(e) => console.log("Error loading beast image:", e.nativeEvent.error)}
       />
       <View style={styles.beastSelectorInfo}>
-        <Text style={styles.beastSelectorName}>{item.name}</Text>
-        <Text style={styles.beastSelectorElement}>{item.element} Element</Text>
+        <Text style={styles.beastSelectorName}>{item.name || "Unknown Beast"}</Text>
+        <Text style={styles.beastSelectorElement}>{item.element || "Unknown"} Element</Text>
         <View style={styles.powerBadge}>
           <Swords size={12} color="#EF4444" />
-          <Text style={styles.powerText}>{item.power} Power</Text>
+          <Text style={styles.powerText}>{item.power || 0} Power</Text>
         </View>
       </View>
       {selectedBeast?.id === item.id && (
@@ -777,19 +794,20 @@ export default function FindPlayersScreen() {
               {selectedBeast ? (
                 <View style={styles.selectedBeastInfo}>
                   <Image
-                    source={{ uri: selectedBeast.image || "/placeholder.svg?height=60&width=60" }}
+                    source={{ uri: getImageUrl(selectedBeast.image_url) }}
                     style={styles.selectedBeastImage}
+                    onError={(e) => console.log("Error loading selected beast image:", e.nativeEvent.error)}
                   />
                   <View style={styles.selectedBeastDetails}>
-                    <Text style={styles.selectedBeastName}>{selectedBeast.name}</Text>
+                    <Text style={styles.selectedBeastName}>{selectedBeast.name || "Unknown Beast"}</Text>
                     <View style={styles.selectedBeastStats}>
                       <View style={styles.statBadge}>
                         <Swords size={12} color="#EF4444" />
-                        <Text style={styles.statText}>{selectedBeast.power} Power</Text>
+                        <Text style={styles.statText}>{selectedBeast.power || 0} Power</Text>
                       </View>
                       <View style={styles.statBadge}>
                         <Shield size={12} color="#3B82F6" />
-                        <Text style={styles.statText}>{selectedBeast.element}</Text>
+                        <Text style={styles.statText}>{selectedBeast.element || "Unknown"}</Text>
                       </View>
                     </View>
                   </View>
@@ -877,13 +895,17 @@ export default function FindPlayersScreen() {
                   {player.selectedBeast && (
                     <View style={styles.beastSection}>
                       <View style={styles.beastInfo}>
-                        <Image source={{ uri: player.selectedBeast.image }} style={styles.beastImage} />
+                        <Image
+                          source={{ uri: getImageUrl(player.selectedBeast.image_url) }}
+                          style={styles.beastImage}
+                          onError={(e) => console.log("Error loading player beast image:", e.nativeEvent.error)}
+                        />
                         <View style={styles.beastDetails}>
-                          <Text style={styles.beastName}>{player.selectedBeast.name}</Text>
-                          <Text style={styles.beastElement}>{player.selectedBeast.element} Element</Text>
+                          <Text style={styles.beastName}>{player.selectedBeast.name || "Unknown Beast"}</Text>
+                          <Text style={styles.beastElement}>{player.selectedBeast.element || "Unknown"} Element</Text>
                           <View style={styles.powerBadge}>
                             <Swords size={12} color="#EF4444" />
-                            <Text style={styles.powerText}>{player.selectedBeast.power} Power</Text>
+                            <Text style={styles.powerText}>{player.selectedBeast.power || 0} Power</Text>
                           </View>
                         </View>
                       </View>
