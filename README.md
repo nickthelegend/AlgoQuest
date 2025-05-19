@@ -1,5 +1,5 @@
 # nickthelegend's AlgoQuest 👋
-
+![Image](https://github.com/user-attachments/assets/26cc595e-daf1-4d69-a995-920a5213f95b)
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
 * [ ] Edit the Connections, make it guestures , dragable guestures
