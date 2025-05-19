@@ -386,18 +386,7 @@ export default function WalletScreen() {
           </BlurView>
         )}
 
-        {/* Assets Section */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Assets</Text>
-        </View>
-
-        {/* No Assets Message */}
-        {!loading && (!isOptedIn || questCoinBalance === 0) && (
-          <View style={styles.emptyStateContainer}>
-            <Text style={styles.emptyStateText}>No assets to show</Text>
-            <Text style={styles.emptyStateSubtext}>Assets you receive will appear here</Text>
-          </View>
-        )}
+        
 
         {/* Quick Actions */}
         <View style={styles.sectionHeader}>

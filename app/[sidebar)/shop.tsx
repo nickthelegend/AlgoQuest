@@ -5,21 +5,20 @@ import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, {
   FadeInDown,
-  FadeIn,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   interpolate,
   Extrapolate,
 } from "react-native-reanimated"
-import { ArrowLeft, Tag, ChevronRight, Search, Star, Sparkles } from "lucide-react-native"
+import { ArrowLeft, Tag, Search, Star, Sparkles } from "lucide-react-native"
 import { router, useNavigation } from "expo-router"
 import { useState, useEffect, useRef } from "react"
 import ScreenLayout from "../../components/screen-layout"
 
 const { width, height } = Dimensions.get("window")
 const ITEM_WIDTH = width - 32
-const HEADER_HEIGHT = height * 0.32
+const HEADER_HEIGHT = height * 0.22
 
 // Helper function to get image source
 const getImageSource = (id) => {
@@ -142,13 +141,6 @@ const shopCategories = [
 
 // Flatten all items for the "All Items" category
 const allItems = shopCategories.flatMap((category) => category.items)
-
-// Featured collection
-const featuredCollection = {
-  title: "Crypto Adventurer",
-  subtitle: "Limited Edition Collection",
-  items: [1, 11, 17].map((id) => allItems.find((item) => item.id === id)),
-}
 
 export default function ShopScreen() {
   const navigation = useNavigation()
@@ -273,48 +265,6 @@ export default function ShopScreen() {
             <Animated.View entering={FadeInDown.delay(200).springify()}>
               <Text style={styles.title}>AlgoQuest Shop</Text>
               <Text style={styles.subtitle}>Exclusive Digital Merchandise</Text>
-            </Animated.View>
-
-            {/* Featured Collection Preview */}
-            <Animated.View entering={FadeInDown.delay(400).springify()} style={styles.featuredCollectionPreview}>
-              <LinearGradient
-                colors={["rgba(124, 58, 237, 0.3)", "rgba(124, 58, 237, 0.1)"]}
-                style={styles.featuredCollectionGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              />
-
-              <View style={styles.featuredCollectionContent}>
-                <View>
-                  <View style={styles.featuredBadge}>
-                    <Sparkles size={12} color="#7C3AED" />
-                    <Text style={styles.featuredBadgeText}>Featured</Text>
-                  </View>
-                  <Text style={styles.featuredCollectionTitle}>{featuredCollection.title}</Text>
-                  <Text style={styles.featuredCollectionSubtitle}>{featuredCollection.subtitle}</Text>
-                </View>
-
-                <TouchableOpacity style={styles.viewCollectionButton} onPress={() => handleCategorySelect("all")}>
-                  <Text style={styles.viewCollectionText}>View</Text>
-                  <ChevronRight size={14} color="#7C3AED" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.featuredCollectionImages}>
-                {featuredCollection.items.map((item, index) => (
-                  <Animated.View
-                    key={item.id}
-                    entering={FadeIn.delay(500 + index * 100).springify()}
-                    style={[styles.featuredCollectionImage, { left: index * 30, zIndex: 3 - index }]}
-                  >
-                    <Image
-                      source={getImageSource(item.imageId)}
-                      style={styles.featuredItemPreviewImage}
-                      resizeMode="cover"
-                    />
-                  </Animated.View>
-                ))}
-              </View>
             </Animated.View>
           </View>
         </Animated.View>
@@ -482,7 +432,6 @@ const styles = StyleSheet.create({
   },
   headerContent: {
     flex: 1,
-    justifyContent: "space-between",
     paddingBottom: 16,
   },
   title: {
@@ -495,84 +444,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "rgba(255, 255, 255, 0.7)",
     marginBottom: 16,
-  },
-  featuredCollectionPreview: {
-    height: 100,
-    borderRadius: 20,
-    overflow: "hidden",
-    position: "relative",
-    marginTop: 8,
-  },
-  featuredCollectionGradient: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: 20,
-  },
-  featuredCollectionContent: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-  },
-  featuredBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: 8,
-    alignSelf: "flex-start",
-    gap: 4,
-  },
-  featuredBadgeText: {
-    color: "#7C3AED",
-    fontSize: 10,
-    fontWeight: "bold",
-  },
-  featuredCollectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#ffffff",
-  },
-  featuredCollectionSubtitle: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.7)",
-  },
-  viewCollectionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 4,
-  },
-  viewCollectionText: {
-    color: "#7C3AED",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  featuredCollectionImages: {
-    position: "absolute",
-    bottom: -20,
-    right: 16,
-    flexDirection: "row",
-    height: 60,
-  },
-  featuredCollectionImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
-    borderWidth: 2,
-    borderColor: "rgba(124, 58, 237, 0.5)",
-    overflow: "hidden",
-    position: "absolute",
-  },
-  featuredItemPreviewImage: {
-    width: "100%",
-    height: "100%",
   },
   categoriesContainer: {
     marginBottom: 24,
@@ -645,19 +516,19 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   itemCard: {
-    borderRadius: 20,
+    borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
-    height: 240,
+    height: 300,
   },
   itemCardContent: {
     flex: 1,
     padding: 12,
   },
   itemImageContainer: {
-    height: 140,
-    borderRadius: 16,
+    height: 180,
+    borderRadius: 12,
     overflow: "hidden",
     marginBottom: 12,
     position: "relative",
@@ -702,35 +573,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#ffffff",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   itemRating: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   ratingText: {
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: "500",
     color: "rgba(255, 255, 255, 0.7)",
   },
   itemPriceRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginTop: 4,
   },
   itemPrice: {
     flexDirection: "row",
     alignItems: "baseline",
     gap: 4,
+    backgroundColor: "rgba(124, 58, 237, 0.15)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(124, 58, 237, 0.3)",
   },
   priceAmount: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "bold",
     color: "#7C3AED",
   },
   priceCurrency: {
     fontSize: 14,
-    color: "rgba(255, 255, 255, 0.6)",
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.8)",
   },
 })
