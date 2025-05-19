@@ -358,7 +358,7 @@ export default function WalletScreen() {
                 pieceBorderRadius={2}
                 isPiecesGlued
                 padding={16}
-                color="#7C3AED"
+                color="#00183a"
                 outerEyesOptions={{
                   topLeft: { borderRadius: 12 },
                   topRight: { borderRadius: 12 },
@@ -366,13 +366,14 @@ export default function WalletScreen() {
                 }}
                 innerEyesOptions={{ borderRadius: 6 }}
                 logo={{
-                  href: require("@/assets/sad.jpg"),
+                  href: require("@/assets/images/quest.png"),
                   padding: 4,
-                  scale: 2,
-                  hidePieces: false,
+                  // scale: 2,
+                  hidePieces: true,
                   borderRadius: 12,
                 }}
                 style={{ backgroundColor: "white" }}
+                
               />
             </View>
             <View style={styles.addressContainer}>
