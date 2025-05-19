@@ -76,7 +76,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/icon.png",
+          "icon": "./assets/images/quest.png",
           "color": "#ffffff",
           "defaultChannel": "default",
           "sounds": [

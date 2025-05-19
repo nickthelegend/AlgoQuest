@@ -12,6 +12,7 @@ import {
   Platform,
   Modal,
   FlatList,
+  Linking,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
@@ -193,11 +194,15 @@ export default function FindPlayersScreen() {
       console.log("Battle invitation received from:", data.name)
       setDebugInfo((prev) => prev + `\nInvitation received: ${JSON.stringify(data)}`)
 
-      // Schedule a local notification to alert the user
+      // Schedule a local notification to alert the user with deep link
       Notifications.scheduleNotificationAsync({
         content: {
           title: "Battle Challenge",
           body: `${data.name} wants to battle with you!`,
+          data: {
+            senderWalletAddress: data.name, // Using name field to pass wallet address
+            url: `exp+algoquest:///(game)/confirm?=${data.name}`,
+          },
         },
         trigger: null, // sends the notification immediately
       })
@@ -214,7 +219,7 @@ export default function FindPlayersScreen() {
           },
           {
             text: "Accept",
-            onPress: () => handleAcceptBattle(data.peerId),
+            onPress: () => router.push(`/(game)/confirm?sender=${data.name}`),
           },
         ],
         { cancelable: false },
@@ -244,12 +249,22 @@ export default function FindPlayersScreen() {
       setConnectedPeerId(null)
     })
 
+    // Set up notification response handler for deep links
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const url = response.notification.request.content.data?.url
+      if (url) {
+        console.log("Opening deep link from notification:", url)
+        Linking.openURL(url)
+      }
+    })
+
     return () => {
       onPeerFoundListener()
       onPeerLostListener()
       onInvitationListener()
       onConnectedListener()
       onDisconnectedListener()
+      subscription.remove()
     }
   }, [permissionsGranted])
 
@@ -559,7 +574,8 @@ export default function FindPlayersScreen() {
         text: "Cancel",
         style: "cancel",
       },
-      {
+      {           
+
         text: "Challenge",
         onPress: async () => {
           try {
@@ -568,11 +584,20 @@ export default function FindPlayersScreen() {
               console.log("Self-testing notification...")
               setDebugInfo((prev) => prev + `\nSelf-testing notification...`)
 
-              // Directly trigger a notification for testing
+              // Create deep link URL with wallet address
+              const deepLinkUrl = `exp+algoquest:///(game)/confirm?=${walletAddress}`
+              console.log("Generated deep link:", deepLinkUrl)
+              setDebugInfo((prev) => prev + `\nGenerated deep link: ${deepLinkUrl}`)
+
+              // Directly trigger a notification for testing with deep link
               await Notifications.scheduleNotificationAsync({
                 content: {
                   title: "Battle Challenge",
                   body: `${username} wants to battle with you!`,
+                  data: {
+                    senderWalletAddress: walletAddress,
+                    url: deepLinkUrl,
+                  },
                 },
                 trigger: null, // sends the notification immediately
               })
@@ -588,7 +613,7 @@ export default function FindPlayersScreen() {
                   },
                   {
                     text: "Accept",
-                    onPress: () => router.push("/battle-arena"),
+                    onPress: () => router.push(`/(game)/confirm?sender=${walletAddress}`),
                   },
                 ],
                 { cancelable: false },
@@ -606,8 +631,8 @@ export default function FindPlayersScreen() {
               throw new Error("Invalid player ID")
             }
 
-            // Send battle invitation to the player
-            await NearbyConnections.requestConnection(player.id)
+            // Send battle invitation to the player with wallet address as identifier
+            await NearbyConnections.requestConnection(player.id, walletAddress)
 
             // Show a toast or alert that the challenge was sent
             Alert.alert("Challenge Sent", `Challenge sent to ${player.name}. Waiting for response...`)
