@@ -6,7 +6,7 @@
 
 ## 🐉 Game Highlights
 
-![Image](https://github.com/user-attachments/assets/4f2840d1-0568-4c4d-ad23-02e243ff0753)
+<img src="https://github.com/user-attachments/assets/4f2840d1-0568-4c4d-ad23-02e243ff0753" width="300"/>
 
 ### ⚔️ 1v1 Real-Time Battles
 
@@ -22,7 +22,8 @@ Challenge other players to real-time, one-on-one beast battles. Strategy, timing
 * Ownership is decentralized and permanent
 
 ### 🌍 Real-World Exploration
-![Image](https://github.com/user-attachments/assets/4bfd5fe7-a0e3-44ea-8a32-c557cb0efc5c)
+<img src="https://github.com/user-attachments/assets/4bfd5fe7-a0e3-44ea-8a32-c557cb0efc5c" width="300"/>
+
 * Integrated with real-world maps (via GPS)
 * Players can find and open **treasure chests** at marked locations
 * Rewards include Quest Coins and rare collectibles
