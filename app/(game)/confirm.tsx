@@ -43,7 +43,7 @@ interface Beast {
   name: string
   power: number
   element: string
-  image: string
+  image_url: string
   owner_id: string
 }
 
@@ -257,12 +257,32 @@ export default function ConfirmBattleScreen() {
     }
   }
 
+  // Function to get the full IPFS image URL
+  const getImageUrl = (imageUrl: string | undefined) => {
+    if (!imageUrl) return "/placeholder.svg?height=100&width=100"
+
+    // If it's already a full URL, return it
+    if (imageUrl.startsWith("http")) return imageUrl
+
+    // If it's an IPFS hash, construct the full URL
+    if (imageUrl.startsWith("Qm") || imageUrl.startsWith("baf")) {
+      return `https://gateway.pinata.cloud/ipfs/${imageUrl}`
+    }
+
+    // Otherwise return as is
+    return imageUrl
+  }
+
   const renderBeastItem = ({ item }: { item: Beast }) => (
     <TouchableOpacity
       style={[styles.beastItem, selectedBeast?.id === item.id && styles.selectedBeastItem]}
       onPress={() => handleSelectBeast(item)}
     >
-      <Image source={{ uri: item.image || "/placeholder.svg?height=100&width=100" }} style={styles.beastImage} />
+      <Image
+        source={{ uri: getImageUrl(item.image_url) }}
+        style={styles.beastImage}
+        onError={(e) => console.log("Error loading beast image:", e.nativeEvent.error)}
+      />
       <View style={styles.beastInfo}>
         <Text style={styles.beastName}>{item.name || "Unknown Beast"}</Text>
         <View style={styles.elementBadge}>
@@ -331,8 +351,9 @@ export default function ConfirmBattleScreen() {
                   style={StyleSheet.absoluteFill}
                 />
                 <Image
-                  source={{ uri: senderBeast.image || "/placeholder.svg?height=80&width=80" }}
+                  source={{ uri: getImageUrl(senderBeast.image_url) }}
                   style={styles.challengerBeastImage}
+                  onError={(e) => console.log("Error loading challenger beast image:", e.nativeEvent.error)}
                 />
                 <View style={styles.challengerBeastInfo}>
                   <Text style={styles.challengerBeastName}>{senderBeast.name || "Unknown Beast"}</Text>
@@ -424,7 +445,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    paddingTop: 60,
+    // paddingTop: 60,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
   backButton: {
