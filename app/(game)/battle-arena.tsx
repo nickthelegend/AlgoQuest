@@ -41,6 +41,7 @@ import { router, useLocalSearchParams } from "expo-router"
 import { createElement } from "react"
 import * as SecureStore from "expo-secure-store"
 import { supabase } from "@/lib/supabase"
+import vsImage from "../../assets/images/vs/vs.png"
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window")
 
@@ -1121,7 +1122,7 @@ export default function BattleArenaScreen() {
                   end={{ x: 1, y: 1 }}
                   style={StyleSheet.absoluteFill}
                 />
-                <Text style={styles.modernVsText}>VS</Text>
+                <Image source={vsImage} style={styles.vsImage} resizeMode="contain" />
                 <View style={styles.vsGlow} />
               </BlurView>
             </Animated.View>
@@ -1614,8 +1615,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 3,
     borderColor: "rgba(255, 255, 255, 0.5)",
+    overflow: "hidden", // Add this to ensure the image respects the container's border radius
   },
-  
+
   modernVsText: {
     fontSize: 36,
     fontWeight: "bold",
@@ -1631,7 +1633,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     zIndex: -1,
   },
-  
+
   gameOverOverlay: {
     position: "absolute",
     top: 0,
@@ -1811,5 +1813,10 @@ const styles = StyleSheet.create({
   },
   logenergy: {
     color: "#06B6D4",
+  },
+  vsImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
   },
 })
