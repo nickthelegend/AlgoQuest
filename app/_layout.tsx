@@ -49,10 +49,9 @@ export default function RootLayout() {
       <Animated.View
         entering={FadeIn.duration(500)}
         exiting={FadeOut.duration(500)}
-        style={[styles.splashContainer, { backgroundColor: "#001529" }]}
+        style={[styles.splashContainer, { backgroundColor: "#000000" }]}
       >
-        <Image source={require("../assets/splash-image.png")} style={styles.splashImage} resizeMode="contain" />
-        <Text style={styles.splashTitle}>AlgoQuest</Text>
+        <Image source={require("../assets/splash.png")} style={styles.splashImage} resizeMode="contain" />
       </Animated.View>
     )
   }
