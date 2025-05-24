@@ -7,13 +7,21 @@ import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, {
   FadeIn,
+  SlideInLeft,
+  SlideInRight,
   useAnimatedStyle,
   withSpring,
+  withSequence,
+  withTiming,
   useSharedValue,
   SlideInUp,
+  SlideInDown,
   ZoomIn,
+  BounceIn,
 } from "react-native-reanimated"
 import {
+  Swords,
+  Crown,
   Flame,
   Wind,
   Cloud,
@@ -21,12 +29,18 @@ import {
   Sun,
   Moon,
   Sparkles,
+  Heart,
+  Zap,
+  Star,
+  X,
   AlertTriangle,
+  Timer,
   Activity,
   Users,
   Wifi,
 } from "lucide-react-native"
 import { router, useLocalSearchParams } from "expo-router"
+import { createElement } from "react"
 import * as SecureStore from "expo-secure-store"
 import { supabase } from "@/lib/supabase"
 import type { RealtimeChannel } from "@supabase/supabase-js"
@@ -81,8 +95,8 @@ interface Battle {
   id: string
   player1_id: string
   player2_id: string
-  player1_beast_id: string // Changed from number to string
-  player2_beast_id: string // Changed from number to string
+  player1_beast_id: string
+  player2_beast_id: string
   winner_id?: string
   battle_data: {
     moves: Array<{
@@ -149,102 +163,6 @@ const truncateWalletAddress = (address: string) => {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
-const arenaStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  errorContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  errorTitle: {
-    fontSize: 24,
-    color: "#FFFFFF",
-    marginTop: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    color: "#FFFFFF",
-    marginTop: 10,
-  },
-  errorButton: {
-    backgroundColor: "#7C3AED",
-    padding: 10,
-    borderRadius: 5,
-    marginTop: 20,
-  },
-  errorButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-  },
-  loadingContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  loadingText: {
-    fontSize: 24,
-    color: "#FFFFFF",
-    marginTop: 20,
-  },
-  loadingSubtext: {
-    fontSize: 16,
-    color: "#FFFFFF",
-    marginTop: 10,
-  },
-  battleCodeContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  battleCodeTitle: {
-    fontSize: 24,
-    color: "#FFFFFF",
-    marginTop: 20,
-  },
-  battleCodeSubtext: {
-    fontSize: 16,
-    color: "#FFFFFF",
-    marginTop: 10,
-  },
-  battleCodeCard: {
-    marginTop: 20,
-    width: screenWidth * 0.8,
-    height: screenHeight * 0.2,
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  battleCodeCardContent: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  battleCodeText: {
-    fontSize: 32,
-    color: "#FFFFFF",
-    fontWeight: "bold",
-  },
-  copyCodeButton: {
-    backgroundColor: "#10B981",
-    padding: 10,
-    borderRadius: 5,
-    marginTop: 10,
-  },
-  copyCodeButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-  },
-  connectionStatus: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 20,
-  },
-  connectionText: {
-    fontSize: 16,
-    marginLeft: 5,
-  },
-})
-
 export default function BattleArenaScreen() {
   const [currentTurn, setCurrentTurn] = useState<"player1" | "player2">("player1")
   const [turnTime, setTurnTime] = useState(30)
@@ -293,6 +211,61 @@ export default function BattleArenaScreen() {
     wind: { fire: 0.5, water: 1.0, earth: 2.0, light: 1.0, dark: 1.0, wind: 0.5 },
     light: { dark: 2.0, fire: 1.0, water: 1.0, earth: 1.0, wind: 1.0, light: 0.5 },
     dark: { light: 2.0, fire: 1.0, water: 1.0, earth: 1.0, wind: 1.0, dark: 0.5 },
+  }
+
+  // Add status effect processing function
+  const processStatusEffects = (beast: Beast, setBeast: (beast: Beast) => void, healthValue: any) => {
+    if (!beast.status) return beast
+
+    let newHealth = beast.health
+    let statusMessage = ""
+
+    switch (beast.status.type) {
+      case "burn":
+        const burnDamage = Math.floor(beast.maxHealth * 0.06) // 6% max health
+        newHealth = Math.max(0, beast.health - burnDamage)
+        statusMessage = `${beast.name} takes ${burnDamage} burn damage!`
+        break
+      case "poison":
+        const poisonDamage = Math.floor(beast.maxHealth * 0.04) // 4% max health
+        newHealth = Math.max(0, beast.health - poisonDamage)
+        statusMessage = `${beast.name} takes ${poisonDamage} poison damage!`
+        break
+      case "freeze":
+        statusMessage = `${beast.name} is frozen and cannot attack!`
+        break
+    }
+
+    // Update health bar
+    if (newHealth !== beast.health) {
+      healthValue.value = withSpring((newHealth / beast.maxHealth) * 100)
+    }
+
+    // Reduce status duration
+    const newStatus = beast.status.duration > 1 ? { ...beast.status, duration: beast.status.duration - 1 } : undefined
+
+    const updatedBeast = {
+      ...beast,
+      health: newHealth,
+      status: newStatus,
+    }
+
+    setBeast(updatedBeast)
+
+    // Add status message to battle log
+    if (statusMessage) {
+      setBattleLogs((prev) => [
+        {
+          id: Date.now().toString() + "_status",
+          message: statusMessage,
+          type: "status" as const,
+          timestamp: Date.now(),
+        },
+        ...prev.slice(0, 4),
+      ])
+    }
+
+    return updatedBeast
   }
 
   useEffect(() => {
@@ -515,67 +488,36 @@ export default function BattleArenaScreen() {
     return data
   }
 
-  const createOrJoinBattle = async (userId: string, beastId: string, opponentId: string): Promise<Battle> => {
-    // First, try to find an existing waiting battle with the opponent
-    const { data: existingBattle, error: findError } = await supabase
-      .from("battles")
-      .select()
-      .eq("player1_id", opponentId)
-      .eq("status", "waiting")
-      .single()
-
-    if (existingBattle && !findError) {
-      // Join existing battle
-      const { data, error } = await supabase
-        .from("battles")
-        .update({
-          player2_id: userId,
-          player2_beast_id: beastId, // Use string directly
-          status: "active",
-        })
-        .eq("id", existingBattle.id)
-        .select()
-        .single()
-
-      if (error) throw error
-      return data
-    } else {
-      // Create new battle
-      const { data, error } = await supabase
-        .from("battles")
-        .insert({
-          player1_id: userId,
-          player2_id: opponentId,
-          player1_beast_id: beastId, // Use string directly
-          status: "waiting",
-          current_turn: "player1",
-          turn_number: 1,
-          turn_time_remaining: 30,
-          battle_data: {
-            moves: [],
-          },
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-      return data
-    }
-  }
-
   const joinBattleByCode = async (userId: string, beastId: string, battleCode: string): Promise<Battle> => {
-    // Find battle by the last 8 characters of the battle ID
+    // Find battle by the battle code
     const { data: battles, error: findError } = await supabase
       .from("battles")
       .select()
       .eq("status", "waiting")
-      .ilike("id", `%${battleCode.toLowerCase()}`)
+      .limit(50)
 
-    if (findError || !battles || battles.length === 0) {
+    if (findError) {
+      throw new Error(`Error finding battle: ${findError.message}`)
+    }
+
+    if (!battles || battles.length === 0) {
+      throw new Error("No waiting battles found. Please check the battle code.")
+    }
+
+    console.log(`Found ${battles.length} waiting battles, searching for code: ${battleCode}`)
+
+    // Find a battle with an ID that matches the code (case insensitive)
+    const matchingBattle = battles.find((battle) => {
+      const battleId = battle.id.toLowerCase()
+      const code = battleCode.toLowerCase()
+      return battleId.endsWith(code) || battleId.includes(code)
+    })
+
+    if (!matchingBattle) {
       throw new Error("Battle room not found. Please check the battle code.")
     }
 
-    const existingBattle = battles[0]
+    console.log("Found matching battle:", matchingBattle.id)
 
     // Join the battle
     const { data, error } = await supabase
@@ -585,7 +527,7 @@ export default function BattleArenaScreen() {
         player2_beast_id: beastId,
         status: "active",
       })
-      .eq("id", existingBattle.id)
+      .eq("id", matchingBattle.id)
       .select()
       .single()
 
@@ -593,7 +535,7 @@ export default function BattleArenaScreen() {
 
     // Send notification to the battle creator via real-time channel
     try {
-      const channel = supabase.channel(`battle:${existingBattle.id}`)
+      const channel = supabase.channel(`battle:${matchingBattle.id}`)
       await channel.send({
         type: "broadcast",
         event: "player_joined",
@@ -813,7 +755,50 @@ export default function BattleArenaScreen() {
   }
 
   const applyMoveToGame = (move: any, isOwnMove: boolean) => {
-    const { ability, damage, healing, energyRestore, targetHealth, targetEnergy, attackerHealth, attackerEnergy } = move
+    const {
+      ability,
+      damage,
+      healing,
+      energyRestore,
+      isCritical,
+      effectiveness,
+      targetHealth,
+      targetEnergy,
+      attackerHealth,
+      attackerEnergy,
+    } = move
+
+    // Enhanced animations
+    if (isCritical) {
+      // Critical hit animation
+      shakeValue.value = withSequence(
+        withTiming(15, { duration: 80 }),
+        withTiming(-15, { duration: 80 }),
+        withTiming(10, { duration: 80 }),
+        withTiming(-10, { duration: 80 }),
+        withTiming(0, { duration: 80 }),
+      )
+      flashValue.value = withSequence(
+        withTiming(1, { duration: 150 }),
+        withTiming(0, { duration: 150 }),
+        withTiming(1, { duration: 150 }),
+        withTiming(0, { duration: 150 }),
+      )
+    } else {
+      // Normal hit animation
+      shakeValue.value = withSequence(
+        withTiming(10, { duration: 100 }),
+        withTiming(-10, { duration: 100 }),
+        withTiming(0, { duration: 100 }),
+      )
+      flashValue.value = withSequence(withTiming(1, { duration: 100 }), withTiming(0, { duration: 100 }))
+    }
+
+    battleFieldScale.value = withSequence(
+      withTiming(1.02, { duration: 100 }),
+      withTiming(0.98, { duration: 100 }),
+      withTiming(1, { duration: 100 }),
+    )
 
     // Update beast states based on move
     if (isOwnMove) {
@@ -875,17 +860,17 @@ export default function BattleArenaScreen() {
       logMessage = `${attackerName} used ${ability.name}! Restored ${energyRestore} energy!`
     } else {
       logMessage = `${attackerName} used ${ability.name}!`
-      if (move.isCritical) logMessage += " Critical hit!"
+      if (isCritical) logMessage += " Critical hit!"
       if (damage) logMessage += ` Dealt ${damage} damage!`
-      if (move.effectiveness && move.effectiveness > 1) logMessage += " It's super effective!"
-      if (move.effectiveness && move.effectiveness < 1) logMessage += " It's not very effective..."
+      if (effectiveness && effectiveness > 1) logMessage += " It's super effective!"
+      if (effectiveness && effectiveness < 1) logMessage += " It's not very effective..."
     }
 
     setBattleLogs((prev) => [
       {
         id: Date.now().toString(),
         message: logMessage,
-        type: move.isCritical ? "system" : ability.type === "heal" ? "heal" : "attack",
+        type: isCritical ? "system" : ability.type === "heal" ? "heal" : "attack",
         timestamp: Date.now(),
       },
       ...prev.slice(0, 4),
@@ -1231,19 +1216,19 @@ export default function BattleArenaScreen() {
   // Error screen
   if (error) {
     return (
-      <SafeAreaView style={arenaStyles.container}>
+      <SafeAreaView style={styles.container}>
         <LinearGradient
           colors={["#0F0F23", "#1E1B4B", "#312E81"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View style={arenaStyles.errorContainer}>
+        <View style={styles.errorContainer}>
           <AlertTriangle size={48} color="#EF4444" />
-          <Text style={arenaStyles.errorTitle}>Battle Error</Text>
-          <Text style={arenaStyles.errorText}>{error}</Text>
-          <TouchableOpacity style={arenaStyles.errorButton} onPress={() => router.back()}>
-            <Text style={arenaStyles.errorButtonText}>Return to Map</Text>
+          <Text style={styles.errorTitle}>Battle Error</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.errorButton} onPress={() => router.back()}>
+            <Text style={styles.errorButtonText}>Return to Map</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -1253,30 +1238,28 @@ export default function BattleArenaScreen() {
   // Loading screen
   if (isLoading || !player1Beast || (waitingForOpponent && !player2Beast)) {
     return (
-      <SafeAreaView style={arenaStyles.container}>
+      <SafeAreaView style={styles.container}>
         <LinearGradient
           colors={["#0F0F23", "#1E1B4B", "#312E81"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View style={arenaStyles.loadingContainer}>
+        <View style={styles.loadingContainer}>
           <Animated.View entering={ZoomIn}>
             {waitingForOpponent ? <Users size={64} color="#7C3AED" /> : <Activity size={64} color="#7C3AED" />}
           </Animated.View>
-          <Animated.Text entering={FadeIn.delay(300)} style={arenaStyles.loadingText}>
+          <Animated.Text entering={FadeIn.delay(300)} style={styles.loadingText}>
             {waitingForOpponent ? "Waiting for Opponent..." : "Preparing Epic Battle..."}
           </Animated.Text>
-          <Animated.Text entering={FadeIn.delay(600)} style={arenaStyles.loadingSubtext}>
+          <Animated.Text entering={FadeIn.delay(600)} style={styles.loadingSubtext}>
             {waitingForOpponent ? "Share your battle code with a friend!" : "Loading beast abilities from database..."}
           </Animated.Text>
 
           {/* Connection Status */}
-          <View style={arenaStyles.connectionStatus}>
+          <View style={styles.connectionStatus}>
             <Wifi size={16} color={connectionStatus === "connected" ? "#10B981" : "#EF4444"} />
-            <Text
-              style={[arenaStyles.connectionText, { color: connectionStatus === "connected" ? "#10B981" : "#EF4444" }]}
-            >
+            <Text style={[styles.connectionText, { color: connectionStatus === "connected" ? "#10B981" : "#EF4444" }]}>
               {connectionStatus === "connected" ? "Connected" : "Connecting..."}
             </Text>
           </View>
@@ -1288,52 +1271,50 @@ export default function BattleArenaScreen() {
   // Battle code sharing screen
   if (waitingForOpponent && battleId) {
     return (
-      <SafeAreaView style={arenaStyles.container}>
+      <SafeAreaView style={styles.container}>
         <LinearGradient
           colors={["#0F0F23", "#1E1B4B", "#312E81"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View style={arenaStyles.battleCodeContainer}>
+        <View style={styles.battleCodeContainer}>
           <Animated.View entering={ZoomIn}>
             <Users size={64} color="#7C3AED" />
           </Animated.View>
-          <Animated.Text entering={FadeIn.delay(300)} style={arenaStyles.battleCodeTitle}>
+          <Animated.Text entering={FadeIn.delay(300)} style={styles.battleCodeTitle}>
             Battle Room Created!
           </Animated.Text>
-          <Animated.Text entering={FadeIn.delay(600)} style={arenaStyles.battleCodeSubtext}>
+          <Animated.Text entering={FadeIn.delay(600)} style={styles.battleCodeSubtext}>
             Share this code with your friend to join the battle:
           </Animated.Text>
 
           {/* Battle Code Display */}
-          <Animated.View entering={SlideInUp.delay(900)} style={arenaStyles.battleCodeCard}>
-            <BlurView intensity={60} tint="dark" style={arenaStyles.battleCodeCardContent}>
+          <Animated.View entering={SlideInUp.delay(900)} style={styles.battleCodeCard}>
+            <BlurView intensity={60} tint="dark" style={styles.battleCodeCardContent}>
               <LinearGradient
                 colors={["rgba(124, 58, 237, 0.4)", "rgba(0, 0, 0, 0.8)"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
               />
-              <Text style={arenaStyles.battleCodeText}>{battleId.slice(-8).toUpperCase()}</Text>
+              <Text style={styles.battleCodeText}>{battleId.slice(-8).toUpperCase()}</Text>
               <TouchableOpacity
-                style={arenaStyles.copyCodeButton}
+                style={styles.copyCodeButton}
                 onPress={() => {
                   // Copy to clipboard functionality would go here
                   Alert.alert("Copied!", "Battle code copied to clipboard")
                 }}
               >
-                <Text style={arenaStyles.copyCodeButtonText}>Copy Code</Text>
+                <Text style={styles.copyCodeButtonText}>Copy Code</Text>
               </TouchableOpacity>
             </BlurView>
           </Animated.View>
 
           {/* Connection Status */}
-          <View style={arenaStyles.connectionStatus}>
+          <View style={styles.connectionStatus}>
             <Wifi size={16} color={connectionStatus === "connected" ? "#10B981" : "#EF4444"} />
-            <Text
-              style={[arenaStyles.connectionText, { color: connectionStatus === "connected" ? "#10B981" : "#EF4444" }]}
-            >
+            <Text style={[styles.connectionText, { color: connectionStatus === "connected" ? "#10B981" : "#EF4444" }]}>
               {connectionStatus === "connected" ? "Connected" : "Connecting..."}
             </Text>
           </View>
@@ -1342,77 +1323,380 @@ export default function BattleArenaScreen() {
     )
   }
 
-  // Main battle screen
   return (
-    <SafeAreaView style={arenaStyles.container}>
+    <SafeAreaView style={styles.container}>
+      {/* Enhanced Background */}
       <LinearGradient
-        colors={["#0F0F23", "#1E1B4B", "#312E81"]}
+        colors={["#0F0F23", "#1E1B4B", "#312E81", "#1E1B4B", "#0F0F23"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      {/* Battle Field */}
-      <Animated.View style={[battleStyles.battleField, battleFieldAnimation]}>
-        <Image source={vsImage} style={battleStyles.vsImage} />
-        {/* Player 1 Beast */}
-        <Animated.View style={[battleStyles.playerBeastContainer, battleStyles.player1BeastContainer]}>
-          <Image source={{ uri: getImageUrl(player1Beast?.image_url) }} style={battleStyles.beastImage} />
-          <View style={battleStyles.beastStatsContainer}>
-            <Text style={battleStyles.beastName}>{player1Name}</Text>
-            <View style={battleStyles.healthBarContainer}>
-              <Text style={battleStyles.healthText}>Health: {player1Beast?.health}</Text>
-              <Animated.View style={[battleStyles.healthBar, player1HealthStyle]} />
-            </View>
-            <View style={battleStyles.energyBarContainer}>
-              <Text style={battleStyles.energyText}>Energy: {player1Beast?.energy}</Text>
-              <Animated.View style={[battleStyles.energyBar, player1EnergyStyle]} />
-            </View>
-          </View>
-        </Animated.View>
-        {/* Player 2 Beast */}
-        <Animated.View style={[battleStyles.playerBeastContainer, battleStyles.player2BeastContainer]}>
-          <Image source={{ uri: getImageUrl(player2Beast?.image_url) }} style={battleStyles.beastImage} />
-          <View style={battleStyles.beastStatsContainer}>
-            <Text style={battleStyles.beastName}>{player2Name}</Text>
-            <View style={battleStyles.healthBarContainer}>
-              <Text style={battleStyles.healthText}>Health: {player2Beast?.health}</Text>
-              <Animated.View style={[battleStyles.healthBar, player2HealthStyle]} />
-            </View>
-            <View style={battleStyles.energyBarContainer}>
-              <Text style={battleStyles.energyText}>Energy: {player2Beast?.energy}</Text>
-              <Animated.View style={[battleStyles.energyBar, player2EnergyStyle]} />
-            </View>
-          </View>
-        </Animated.View>
-      </Animated.View>
-      {/* Abilities */}
-      <View style={battleStyles.abilitiesContainer}>
-        {player1Beast?.abilities.map((ability) => (
-          <TouchableOpacity
-            key={ability.id}
-            style={[battleStyles.abilityButton, { backgroundColor: getAbilityTypeColor(ability.type) }]}
-            onPress={() => handleAttack(ability)}
-            disabled={!isMyTurn() || selectedMove !== null}
-          >
-            <Text style={battleStyles.abilityText}>{ability.name}</Text>
-          </TouchableOpacity>
+
+      {/* Animated particles background */}
+      <View style={styles.particlesContainer}>
+        {[...Array(20)].map((_, i) => (
+          <Animated.View
+            key={i}
+            entering={FadeIn.delay(i * 100)}
+            style={[
+              styles.particle,
+              {
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 3}s`,
+              },
+            ]}
+          />
         ))}
       </View>
-      {/* Battle Log */}
-      {showBattleLog && (
-        <View style={battleStyles.battleLogContainer}>
-          {battleLogs.map((log) => (
-            <Text key={log.id} style={[battleStyles.battleLogText, { color: getAbilityTypeColor(log.type) }]}>
-              {log.message}
-            </Text>
-          ))}
+
+      {/* Battle Arena */}
+      <Animated.View style={[styles.arenaContainer, battleFieldAnimation]}>
+        {/* Enhanced Enemy Stats (Top) */}
+        <Animated.View entering={SlideInDown.delay(200)} style={styles.enemyStats}>
+          <BlurView intensity={60} tint="dark" style={styles.modernStatsCard}>
+            <LinearGradient
+              colors={[`${getElementColor(player2Beast.element)}40`, "rgba(0, 0, 0, 0.8)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={styles.statsHeader}>
+              <View style={styles.playerInfo}>
+                <View style={styles.playerNameContainer}>
+                  <Text style={styles.playerName}>{player2Name}</Text>
+                  <View style={styles.modernRankBadge}>
+                    <Crown size={14} color="#FFD700" />
+                    <Text style={styles.rankText}>#{player2Beast.level}</Text>
+                  </View>
+                </View>
+                <View style={styles.beastInfo}>
+                  <Text style={styles.beastName}>{player2Beast.name}</Text>
+                  <View style={styles.modernElementBadge}>
+                    {createElement(getElementIcon(player2Beast.element), {
+                      size: 14,
+                      color: getElementColor(player2Beast.element),
+                    })}
+                    <Text style={[styles.elementText, { color: getElementColor(player2Beast.element) }]}>
+                      {player2Beast.element}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.modernStatsGrid}>
+              <View style={styles.modernStatItem}>
+                <Heart size={18} color="#EF4444" />
+                <View style={styles.modernStatBarContainer}>
+                  <Animated.View style={[styles.modernStatBar, player2HealthStyle, { backgroundColor: "#EF4444" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(player2Beast.health) || 0}</Text>
+                </View>
+              </View>
+
+              <View style={styles.modernStatItem}>
+                <Zap size={18} color="#7C3AED" />
+                <View style={styles.modernStatBarContainer}>
+                  <Animated.View style={[styles.modernStatBar, player2EnergyStyle, { backgroundColor: "#7C3AED" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(player2Beast.energy)}</Text>
+                </View>
+              </View>
+              {player2Beast.status && (
+                <View style={styles.statusEffectContainer}>
+                  <Text style={styles.statusEffectText}>
+                    {player2Beast.status.type}: {player2Beast.status.duration} turns
+                  </Text>
+                </View>
+              )}
+            </View>
+          </BlurView>
+        </Animated.View>
+
+        {/* Enhanced Battle Scene */}
+        <View style={styles.battleScene}>
+          {/* Modern Battle Timer */}
+          {!gameOver && (
+            <Animated.View entering={BounceIn.delay(500)} style={styles.modernBattleTimer}>
+              <BlurView intensity={80} tint="dark" style={styles.modernTimerCard}>
+                <LinearGradient
+                  colors={[
+                    turnTime <= 10 ? "rgba(239, 68, 68, 0.6)" : "rgba(124, 58, 237, 0.4)",
+                    "rgba(245, 158, 11, 0.4)",
+                  ]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Timer size={20} color="#F59E0B" />
+                <Text style={styles.modernTimerText}>{turnTime}</Text>
+                <Text style={styles.modernTurnText}>{isMyTurn() ? "Your Turn" : "Enemy Turn"}</Text>
+                <View
+                  style={{
+                    position: "absolute",
+                    top: -2,
+                    left: -2,
+                    right: -2,
+                    bottom: -2,
+                    borderRadius: 26,
+                    borderWidth: 2,
+                    borderColor: turnTime <= 10 ? "#EF4444" : "#7C3AED",
+                    opacity: 0.6,
+                  }}
+                />
+              </BlurView>
+            </Animated.View>
+          )}
+
+          {/* Enhanced Enemy Beast */}
+          <Animated.View
+            ref={player2BeastRef}
+            entering={SlideInLeft.delay(400)}
+            style={[styles.modernBeastContainer, styles.enemyBeastContainer]}
+          >
+            <LinearGradient
+              colors={[`${getElementColor(player2Beast.element)}60`, "transparent"]}
+              style={styles.modernBeastGlow}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+            />
+            <View style={styles.beastImageContainer}>
+              <Image
+                source={{ uri: getImageUrl(player2Beast.image_url) }}
+                style={styles.modernBeastImage}
+                resizeMode="contain"
+                onError={(e) => console.log("Error loading enemy beast image:", e.nativeEvent.error)}
+              />
+            </View>
+            <View style={styles.beastShadow} />
+          </Animated.View>
+
+          {/* Enhanced Player Beast */}
+          <Animated.View
+            ref={player1BeastRef}
+            entering={SlideInRight.delay(400)}
+            style={[styles.modernBeastContainer, styles.playerBeastContainer]}
+          >
+            <LinearGradient
+              colors={[`${getElementColor(player1Beast.element)}60`, "transparent"]}
+              style={styles.modernBeastGlow}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+            />
+            <View style={styles.beastImageContainer}>
+              <Image
+                source={{ uri: getImageUrl(player1Beast.image_url) }}
+                style={styles.modernBeastImage}
+                resizeMode="contain"
+                onError={(e) => console.log("Error loading player beast image:", e.nativeEvent.error)}
+              />
+            </View>
+            <View style={styles.beastShadow} />
+          </Animated.View>
+
+          {/* Enhanced VS Badge - Show during battle */}
+          {battleStarted && !gameOver && (
+            <Animated.View entering={ZoomIn.delay(600)} style={styles.modernVsBadge}>
+              <BlurView intensity={80} tint="dark" style={styles.modernVsBadgeContent}>
+                <LinearGradient
+                  colors={["rgba(239, 68, 68, 0.6)", "rgba(124, 58, 237, 0.6)"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Image source={vsImage} style={styles.vsImage} resizeMode="contain" />
+                <View style={styles.vsGlow} />
+              </BlurView>
+            </Animated.View>
+          )}
+
+          {/* Enhanced Game Over Overlay */}
+          {gameOver && (
+            <Animated.View entering={ZoomIn} style={styles.gameOverOverlay}>
+              <BlurView intensity={60} tint="dark" style={styles.modernGameOverCard}>
+                <LinearGradient
+                  colors={[
+                    winner === "player1" ? "rgba(16, 185, 129, 0.4)" : "rgba(239, 68, 68, 0.4)",
+                    "rgba(0, 0, 0, 0.8)",
+                  ]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Text style={styles.modernGameOverTitle}>{winner === "player1" ? "🏆 VICTORY!" : "💀 DEFEAT!"}</Text>
+                <Text style={styles.modernGameOverText}>
+                  {winner === "player1"
+                    ? `Your ${player1Beast.name} has triumphed over ${player2Beast.name}!`
+                    : `Your ${player1Beast.name} has fallen to ${player2Beast.name}!`}
+                </Text>
+                <TouchableOpacity style={styles.modernExitButton} onPress={() => router.back()}>
+                  <Text style={styles.modernExitButtonText}>Return to Map</Text>
+                </TouchableOpacity>
+              </BlurView>
+            </Animated.View>
+          )}
         </View>
-      )}
+
+        {/* Enhanced Player Stats (Bottom) */}
+        <Animated.View entering={SlideInUp.delay(200)} style={styles.playerStats}>
+          <BlurView intensity={60} tint="dark" style={styles.modernStatsCard}>
+            <LinearGradient
+              colors={[`${getElementColor(player1Beast.element)}40`, "rgba(0, 0, 0, 0.8)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={styles.statsHeader}>
+              <View style={styles.playerInfo}>
+                <View style={styles.playerNameContainer}>
+                  <Text style={styles.playerName}>{player1Name}</Text>
+                  <View style={styles.modernRankBadge}>
+                    <Crown size={14} color="#FFD700" />
+                    <Text style={styles.rankText}>#{player1Beast.level}</Text>
+                  </View>
+                </View>
+                <View style={styles.beastInfo}>
+                  <Text style={styles.beastName}>{player1Beast.name}</Text>
+                  <View style={styles.modernElementBadge}>
+                    {createElement(getElementIcon(player1Beast.element), {
+                      size: 14,
+                      color: getElementColor(player1Beast.element),
+                    })}
+                    <Text style={[styles.elementText, { color: getElementColor(player1Beast.element) }]}>
+                      {player1Beast.element}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.modernStatsGrid}>
+              <View style={styles.modernStatItem}>
+                <Heart size={18} color="#EF4444" />
+                <View style={styles.modernStatBarContainer}>
+                  <Animated.View style={[styles.modernStatBar, player1HealthStyle, { backgroundColor: "#EF4444" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(player1Beast.health) || 0}</Text>
+                </View>
+              </View>
+
+              <View style={styles.modernStatItem}>
+                <Zap size={18} color="#7C3AED" />
+                <View style={styles.modernStatBarContainer}>
+                  <Animated.View style={[styles.modernStatBar, player1EnergyStyle, { backgroundColor: "#7C3AED" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(player1Beast.energy)}</Text>
+                </View>
+              </View>
+              {player1Beast.status && (
+                <View style={styles.statusEffectContainer}>
+                  <Text style={styles.statusEffectText}>
+                    {player1Beast.status.type}: {player1Beast.status.duration} turns
+                  </Text>
+                </View>
+              )}
+            </View>
+          </BlurView>
+        </Animated.View>
+
+        {/* Enhanced Battle Log */}
+        {showBattleLog && (
+          <Animated.View entering={SlideInLeft} style={styles.modernBattleLog}>
+            <BlurView intensity={60} tint="dark" style={styles.modernBattleLogCard}>
+              <LinearGradient
+                colors={["rgba(124, 58, 237, 0.2)", "rgba(0, 0, 0, 0.8)"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              {battleLogs.map((log) => (
+                <Text key={log.id} style={[styles.modernLogText, styles[`log${log.type}`]]}>
+                  {log.message}
+                </Text>
+              ))}
+            </BlurView>
+          </Animated.View>
+        )}
+
+        {/* Enhanced Moves Panel */}
+        {isMyTurn() && !gameOver && (
+          <Animated.View entering={SlideInUp.delay(300)} style={styles.modernMovesPanel}>
+            <BlurView intensity={60} tint="dark" style={styles.modernMovesPanelContent}>
+              <LinearGradient
+                colors={["rgba(124, 58, 237, 0.2)", "rgba(0, 0, 0, 0.8)"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={styles.modernMovesGrid}>
+                {player1Beast.abilities.map((ability) => (
+                  <TouchableOpacity
+                    key={ability.id}
+                    style={[
+                      styles.modernMoveCard,
+                      { borderColor: getAbilityTypeColor(ability.type) },
+                      player1Beast.energy < ability.energy_cost && styles.disabledMove,
+                    ]}
+                    onPress={() => player1Beast.energy >= ability.energy_cost && handleAttack(ability)}
+                    disabled={player1Beast.energy < ability.energy_cost}
+                  >
+                    <LinearGradient
+                      colors={[`${getAbilityTypeColor(ability.type)}30`, "rgba(0, 0, 0, 0.8)"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <View style={styles.modernMoveHeader}>
+                      {createElement(getElementIcon(ability.element), {
+                        size: 28,
+                        color: getElementColor(ability.element),
+                      })}
+                      <View
+                        style={[styles.modernMoveType, { backgroundColor: `${getAbilityTypeColor(ability.type)}50` }]}
+                      >
+                        <Text style={[styles.modernMoveTypeText, { color: getAbilityTypeColor(ability.type) }]}>
+                          {ability.type}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.modernMoveName}>{ability.name}</Text>
+                    <View style={styles.modernMoveStats}>
+                      <View style={styles.modernMoveStat}>
+                        <Swords size={16} color={getAbilityTypeColor(ability.type)} />
+                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
+                          {ability.power}
+                        </Text>
+                      </View>
+                      <View style={styles.modernMoveStat}>
+                        <Star size={16} color={getAbilityTypeColor(ability.type)} />
+                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
+                          {ability.accuracy}%
+                        </Text>
+                      </View>
+                      <View style={styles.modernMoveStat}>
+                        <Zap size={16} color={getAbilityTypeColor(ability.type)} />
+                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
+                          {ability.energy_cost}
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </BlurView>
+          </Animated.View>
+        )}
+
+        {/* Enhanced Back Button */}
+        <TouchableOpacity style={styles.modernBackButton} onPress={() => router.back()}>
+          <BlurView intensity={60} tint="dark" style={styles.modernBackButtonContent}>
+            <X size={24} color="#ffffff" />
+          </BlurView>
+        </TouchableOpacity>
+      </Animated.View>
     </SafeAreaView>
   )
 }
 
-const battleStyles = StyleSheet.create({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0F0F23",
@@ -1462,19 +1746,6 @@ const battleStyles = StyleSheet.create({
   connectionText: {
     fontSize: 14,
     fontWeight: "600",
-  },
-  connectionIndicator: {
-    position: "absolute",
-    top: 20,
-    right: 80,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    zIndex: 100,
   },
   errorContainer: {
     flex: 1,
@@ -1815,12 +2086,6 @@ const battleStyles = StyleSheet.create({
   modernLogText: {
     fontSize: 14,
     marginBottom: 4,
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  modernLogText: {
-    fontSize: 14,
-    marginBottom: 4,
     color: "#ffffff",
     fontWeight: "500",
   },
@@ -1940,88 +2205,45 @@ const battleStyles = StyleSheet.create({
     color: "#fff",
     fontSize: 12,
   },
-  battleField: {
-    flexDirection: "row",
+  battleCodeContainer: {
     alignItems: "center",
-    justifyContent: "space-around",
-    width: "100%",
-    paddingHorizontal: 20,
+    justifyContent: "center",
   },
-  playerBeastContainer: {
-    alignItems: "center",
-  },
-  beastImage: {
-    width: 120,
-    height: 120,
-    resizeMode: "contain",
-  },
-  beastStatsContainer: {
-    alignItems: "center",
-    marginTop: 10,
-  },
-  healthBarContainer: {
-    width: 150,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    borderRadius: 5,
-    overflow: "hidden",
-    marginTop: 5,
-  },
-  healthBar: {
-    height: 10,
-    backgroundColor: "#10B981",
-    width: "100%",
-  },
-  energyBarContainer: {
-    width: 150,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    borderRadius: 5,
-    overflow: "hidden",
-    marginTop: 5,
-  },
-  energyBar: {
-    height: 10,
-    backgroundColor: "#F59E0B",
-    width: "100%",
-  },
-  healthText: {
-    color: "#fff",
-    fontSize: 12,
-    position: "absolute",
-    top: -15,
-  },
-  energyText: {
-    color: "#fff",
-    fontSize: 12,
-    position: "absolute",
-    top: -15,
-  },
-  abilitiesContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    width: "100%",
-    paddingHorizontal: 20,
+  battleCodeTitle: {
+    fontSize: 24,
+    color: "#FFFFFF",
     marginTop: 20,
   },
-  abilityButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 5,
-  },
-  abilityText: {
-    color: "#fff",
+  battleCodeSubtext: {
     fontSize: 16,
+    color: "#FFFFFF",
+    marginTop: 10,
   },
-  battleLogContainer: {
-    position: "absolute",
-    bottom: 20,
-    left: 20,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    paddingVertical: 5,
-    paddingHorizontal: 10,
+  battleCodeCard: {
+    marginTop: 20,
+    width: screenWidth * 0.8,
+    height: screenHeight * 0.2,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  battleCodeCardContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  battleCodeText: {
+    fontSize: 32,
+    color: "#FFFFFF",
+    fontWeight: "bold",
+  },
+  copyCodeButton: {
+    backgroundColor: "#10B981",
+    padding: 10,
     borderRadius: 5,
+    marginTop: 10,
   },
-  battleLogText: {
-    color: "#fff",
-    fontSize: 14,
+  copyCodeButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
   },
 })
