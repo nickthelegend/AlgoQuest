@@ -1,27 +1,19 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Vibration, StatusBar } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Vibration, StatusBar, Alert } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, {
   FadeIn,
-  SlideInLeft,
-  SlideInRight,
   useAnimatedStyle,
   withSpring,
-  withSequence,
-  withTiming,
   useSharedValue,
   SlideInUp,
-  SlideInDown,
   ZoomIn,
-  BounceIn,
 } from "react-native-reanimated"
 import {
-  Swords,
-  Crown,
   Flame,
   Wind,
   Cloud,
@@ -29,19 +21,17 @@ import {
   Sun,
   Moon,
   Sparkles,
-  Heart,
-  Zap,
-  Star,
-  X,
   AlertTriangle,
-  Timer,
   Activity,
+  Users,
+  Wifi,
 } from "lucide-react-native"
 import { router, useLocalSearchParams } from "expo-router"
-import { createElement } from "react"
 import * as SecureStore from "expo-secure-store"
 import { supabase } from "@/lib/supabase"
+import type { RealtimeChannel } from "@supabase/supabase-js"
 import vsImage from "../../assets/images/vs/vs.png"
+import * as Notifications from "expo-notifications"
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window")
 
@@ -87,16 +77,53 @@ interface Beast {
   }[]
 }
 
-interface Player {
-  name: string
-  rank: number
-  beast: Beast
+interface Battle {
+  id: string
+  player1_id: string
+  player2_id: string
+  player1_beast_id: string // Changed from number to string
+  player2_beast_id: string // Changed from number to string
+  winner_id?: string
+  battle_data: {
+    moves: Array<{
+      id: string
+      player_id: string
+      ability: BeastAbility
+      damage?: number
+      healing?: number
+      energyRestore?: number
+      isCritical?: boolean
+      effectiveness?: number
+      targetHealth?: number
+      targetEnergy?: number
+      attackerHealth?: number
+      attackerEnergy?: number
+      timestamp: number
+    }>
+    player1_beast_state?: {
+      health: number
+      energy: number
+      status?: any
+    }
+    player2_beast_state?: {
+      health: number
+      energy: number
+      status?: any
+    }
+  }
+  status: "waiting" | "active" | "completed" | "abandoned"
+  current_turn: "player1" | "player2"
+  turn_number: number
+  turn_time_remaining: number
+  created_at: string
+  updated_at: string
+  ended_at?: string
 }
 
 interface BattleLog {
   id: string
   message: string
-  type: "attack" | "heal" | "buff" | "status" | "system"
+  type: "attack" | "heal" | "buff" | "debuff" | "status" | "system"
   timestamp: number
 }
 
@@ -122,6 +149,102 @@ const truncateWalletAddress = (address: string) => {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
+const arenaStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  errorContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  errorTitle: {
+    fontSize: 24,
+    color: "#FFFFFF",
+    marginTop: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: "#FFFFFF",
+    marginTop: 10,
+  },
+  errorButton: {
+    backgroundColor: "#7C3AED",
+    padding: 10,
+    borderRadius: 5,
+    marginTop: 20,
+  },
+  errorButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+  },
+  loadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingText: {
+    fontSize: 24,
+    color: "#FFFFFF",
+    marginTop: 20,
+  },
+  loadingSubtext: {
+    fontSize: 16,
+    color: "#FFFFFF",
+    marginTop: 10,
+  },
+  battleCodeContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  battleCodeTitle: {
+    fontSize: 24,
+    color: "#FFFFFF",
+    marginTop: 20,
+  },
+  battleCodeSubtext: {
+    fontSize: 16,
+    color: "#FFFFFF",
+    marginTop: 10,
+  },
+  battleCodeCard: {
+    marginTop: 20,
+    width: screenWidth * 0.8,
+    height: screenHeight * 0.2,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  battleCodeCardContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  battleCodeText: {
+    fontSize: 32,
+    color: "#FFFFFF",
+    fontWeight: "bold",
+  },
+  copyCodeButton: {
+    backgroundColor: "#10B981",
+    padding: 10,
+    borderRadius: 5,
+    marginTop: 10,
+  },
+  copyCodeButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+  },
+  connectionStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 20,
+  },
+  connectionText: {
+    fontSize: 16,
+    marginLeft: 5,
+  },
+})
+
 export default function BattleArenaScreen() {
   const [currentTurn, setCurrentTurn] = useState<"player1" | "player2">("player1")
   const [turnTime, setTurnTime] = useState(30)
@@ -134,7 +257,16 @@ export default function BattleArenaScreen() {
   const [winner, setWinner] = useState<"player1" | "player2" | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const { beastId } = useLocalSearchParams()
+  // Real-time multiplayer states
+  const [battleId, setBattleId] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string>("")
+  const [isPlayer1, setIsPlayer1] = useState(true)
+  const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "disconnected">("connecting")
+  const [waitingForOpponent, setWaitingForOpponent] = useState(false)
+  const [turnNumber, setTurnNumber] = useState(1)
+  const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null)
+
+  const { beastId, opponentId } = useLocalSearchParams()
   const [player1Beast, setPlayer1Beast] = useState<Beast | null>(null)
   const [player2Beast, setPlayer2Beast] = useState<Beast | null>(null)
   const [player1Name, setPlayer1Name] = useState("You")
@@ -163,61 +295,6 @@ export default function BattleArenaScreen() {
     dark: { light: 2.0, fire: 1.0, water: 1.0, earth: 1.0, wind: 1.0, dark: 0.5 },
   }
 
-  // Add status effect processing function
-  const processStatusEffects = (beast: Beast, setBeast: (beast: Beast) => void, healthValue: any) => {
-    if (!beast.status) return beast
-
-    let newHealth = beast.health
-    let statusMessage = ""
-
-    switch (beast.status.type) {
-      case "burn":
-        const burnDamage = Math.floor(beast.maxHealth * 0.06) // 6% max health
-        newHealth = Math.max(0, beast.health - burnDamage)
-        statusMessage = `${beast.name} takes ${burnDamage} burn damage!`
-        break
-      case "poison":
-        const poisonDamage = Math.floor(beast.maxHealth * 0.04) // 4% max health
-        newHealth = Math.max(0, beast.health - poisonDamage)
-        statusMessage = `${beast.name} takes ${poisonDamage} poison damage!`
-        break
-      case "freeze":
-        statusMessage = `${beast.name} is frozen and cannot attack!`
-        break
-    }
-
-    // Update health bar
-    if (newHealth !== beast.health) {
-      healthValue.value = withSpring((newHealth / beast.maxHealth) * 100)
-    }
-
-    // Reduce status duration
-    const newStatus = beast.status.duration > 1 ? { ...beast.status, duration: beast.status.duration - 1 } : undefined
-
-    const updatedBeast = {
-      ...beast,
-      health: newHealth,
-      status: newStatus,
-    }
-
-    setBeast(updatedBeast)
-
-    // Add status message to battle log
-    if (statusMessage) {
-      setBattleLogs((prev) => [
-        {
-          id: Date.now().toString() + "_status",
-          message: statusMessage,
-          type: "status" as const,
-          timestamp: Date.now(),
-        },
-        ...prev.slice(0, 4),
-      ])
-    }
-
-    return updatedBeast
-  }
-
   useEffect(() => {
     // Hide status bar for immersive experience
     StatusBar.setHidden(true)
@@ -226,42 +303,652 @@ export default function BattleArenaScreen() {
     }
   }, [])
 
+  // Initialize battle and real-time connection
+  useEffect(() => {
+    initializeBattle()
+
+    return () => {
+      // Cleanup real-time connection
+      if (realtimeChannel) {
+        realtimeChannel.unsubscribe()
+      }
+    }
+  }, [])
+
   // Battle timer
   useEffect(() => {
-    if (battleStarted && turnTime > 0 && !gameOver) {
+    if (battleStarted && turnTime > 0 && !gameOver && !waitingForOpponent) {
       const timer = setInterval(() => {
         setTurnTime((prev) => prev - 1)
       }, 1000)
 
       return () => clearInterval(timer)
-    } else if (battleStarted && turnTime === 0 && !gameOver) {
+    } else if (battleStarted && turnTime === 0 && !gameOver && !waitingForOpponent) {
       // Time's up, switch turns
       handleTimeUp()
     }
-  }, [battleStarted, turnTime, gameOver])
+  }, [battleStarted, turnTime, gameOver, waitingForOpponent])
 
-  const handleTimeUp = () => {
+  const initializeBattle = async () => {
+    try {
+      setIsLoading(true)
+
+      // Get current user ID - try multiple sources
+      let userId = await SecureStore.getItemAsync("userId")
+
+      // If no userId in SecureStore, try to get from Supabase auth
+      if (!userId) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (user) {
+          userId = user.id
+          // Store it for future use
+          await SecureStore.setItemAsync("userId", user.id)
+        }
+      }
+
+      if (!userId) {
+        setError("User not found. Please log in again.")
+        return
+      }
+
+      console.log("User ID:", userId) // Debug log
+
+      setCurrentUserId(userId)
+
+      // Get selected beast ID
+      const selectedBeastId = beastId || (await SecureStore.getItemAsync("selectedBeastId"))
+      if (!selectedBeastId) {
+        setError("No beast selected for battle. Please select a beast first.")
+        return
+      }
+
+      console.log("Selected Beast ID:", selectedBeastId) // Debug log
+
+      // Verify the beast exists and belongs to the user - use string ID directly
+      const { data: beastCheck, error: beastError } = await supabase
+        .from("beasts")
+        .select("id, owner_id")
+        .eq("id", selectedBeastId) // Use selectedBeastId directly as string
+        .single()
+
+      if (beastError || !beastCheck) {
+        console.error("Beast verification error:", beastError)
+        setError("Selected beast not found. Please select a valid beast.")
+        return
+      }
+
+      if (beastCheck.owner_id !== userId) {
+        setError("You don't own this beast. Please select one of your beasts.")
+        return
+      }
+
+      console.log("Beast verified:", beastCheck) // Debug log
+
+      // Create or join battle
+      let battle: Battle
+      if (opponentId) {
+        // Join existing battle using battle code
+        battle = await joinBattleByCode(userId, selectedBeastId, opponentId as string)
+      } else {
+        // Create battle and wait for opponent
+        battle = await createBattle(userId, selectedBeastId)
+        setWaitingForOpponent(true)
+      }
+
+      console.log("Battle created/joined:", battle) // Debug log
+
+      setBattleId(battle.id)
+      setIsPlayer1(battle.player1_id === userId)
+
+      // Load battle data
+      await loadBattleData(battle, userId)
+
+      // Set up real-time connection
+      setupRealtimeConnection(battle.id)
+    } catch (error) {
+      console.error("Error initializing battle:", error)
+      setError(`Failed to initialize battle: ${error.message || "Unknown error"}`)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const createBattle = async (userId: string, beastId: string): Promise<Battle> => {
+    console.log("Creating battle with:", { userId, beastId }) // Debug log
+
+    const battleData = {
+      player1_id: userId,
+      player1_beast_id: beastId, // Use string directly
+      status: "waiting",
+      current_turn: "player1",
+      turn_number: 1,
+      turn_time_remaining: 30,
+      battle_data: {
+        moves: [],
+      },
+    }
+
+    console.log("Battle data to insert:", battleData) // Debug log
+
+    const { data, error } = await supabase.from("battles").insert(battleData).select().single()
+
+    if (error) {
+      console.error("Error creating battle:", error)
+      throw error
+    }
+
+    console.log("Battle created successfully:", data) // Debug log
+    return data
+  }
+
+  const createOrJoinBattle = async (userId: string, beastId: string, opponentId: string): Promise<Battle> => {
+    // First, try to find an existing waiting battle with the opponent
+    const { data: existingBattle, error: findError } = await supabase
+      .from("battles")
+      .select()
+      .eq("player1_id", opponentId)
+      .eq("status", "waiting")
+      .single()
+
+    if (existingBattle && !findError) {
+      // Join existing battle
+      const { data, error } = await supabase
+        .from("battles")
+        .update({
+          player2_id: userId,
+          player2_beast_id: beastId, // Use string directly
+          status: "active",
+        })
+        .eq("id", existingBattle.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    } else {
+      // Create new battle
+      const { data, error } = await supabase
+        .from("battles")
+        .insert({
+          player1_id: userId,
+          player2_id: opponentId,
+          player1_beast_id: beastId, // Use string directly
+          status: "waiting",
+          current_turn: "player1",
+          turn_number: 1,
+          turn_time_remaining: 30,
+          battle_data: {
+            moves: [],
+          },
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    }
+  }
+
+  const joinBattleByCode = async (userId: string, beastId: string, battleCode: string): Promise<Battle> => {
+    // Find battle by the last 8 characters of the battle ID
+    const { data: battles, error: findError } = await supabase
+      .from("battles")
+      .select()
+      .eq("status", "waiting")
+      .ilike("id", `%${battleCode.toLowerCase()}`)
+
+    if (findError || !battles || battles.length === 0) {
+      throw new Error("Battle room not found. Please check the battle code.")
+    }
+
+    const existingBattle = battles[0]
+
+    // Join the battle
+    const { data, error } = await supabase
+      .from("battles")
+      .update({
+        player2_id: userId,
+        player2_beast_id: beastId,
+        status: "active",
+      })
+      .eq("id", existingBattle.id)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    // Send notification to the battle creator via real-time channel
+    try {
+      const channel = supabase.channel(`battle:${existingBattle.id}`)
+      await channel.send({
+        type: "broadcast",
+        event: "player_joined",
+        payload: {
+          message: "Opponent has joined the battle!",
+          joinedPlayerId: userId,
+          timestamp: Date.now(),
+        },
+      })
+    } catch (notificationError) {
+      console.log("Failed to send join notification:", notificationError)
+    }
+
+    return data
+  }
+
+  const loadBattleData = async (battle: Battle, userId: string) => {
+    try {
+      // Load player 1 beast
+      const { data: player1BeastData, error: p1Error } = await supabase
+        .from("beasts")
+        .select("*, users!inner(wallet_address)")
+        .eq("id", battle.player1_beast_id)
+        .single()
+
+      if (p1Error) throw p1Error
+
+      // Load player 2 beast (if exists)
+      let player2BeastData = null
+      if (battle.player2_beast_id) {
+        const { data, error } = await supabase
+          .from("beasts")
+          .select("*, users!inner(wallet_address)")
+          .eq("id", battle.player2_beast_id)
+          .single()
+
+        if (error) throw error
+        player2BeastData = data
+      }
+
+      // Process beast data
+      const player1Beast = await processBeastData(player1BeastData)
+      const player2Beast = player2BeastData ? await processBeastData(player2BeastData) : null
+
+      // Set beast data based on user position
+      if (battle.player1_id === userId) {
+        setPlayer1Beast(player1Beast)
+        setPlayer2Beast(player2Beast)
+        setPlayer1Name("You")
+        setPlayer2Name(player2Beast ? truncateWalletAddress(player2BeastData.users.wallet_address) : "Waiting...")
+      } else {
+        setPlayer1Beast(player2Beast)
+        setPlayer2Beast(player1Beast)
+        setPlayer1Name(player1Beast ? truncateWalletAddress(player1BeastData.users.wallet_address) : "Waiting...")
+        setPlayer2Name("You")
+      }
+
+      // Start battle if both players are ready
+      if (battle.status === "active" && player1Beast && player2Beast) {
+        setBattleStarted(true)
+        setWaitingForOpponent(false)
+        setCurrentTurn(battle.current_turn)
+        setTurnNumber(battle.turn_number)
+        setTurnTime(battle.turn_time_remaining)
+      }
+    } catch (error) {
+      console.error("Error loading battle data:", error)
+      throw error
+    }
+  }
+
+  const processBeastData = async (beastData: any): Promise<Beast> => {
+    const metadata = beastData.metadata
+    const abilityIds = metadata.abilities || []
+    const abilities = await fetchBeastAbilities(abilityIds)
+    const allocatedStats = beastData.allocated_stats || { attack: 50, defense: 50, speed: 50, health: 50 }
+
+    return {
+      ...beastData,
+      health: allocatedStats.health * 4,
+      maxHealth: allocatedStats.health * 4,
+      energy: 100,
+      maxEnergy: 100,
+      level: metadata.tier || 1,
+      element: abilities[0]?.element || "fire",
+      stats: {
+        attack: allocatedStats.attack,
+        defense: allocatedStats.defense,
+        speed: allocatedStats.speed,
+        magic: allocatedStats.attack,
+      },
+      abilities: [
+        ...abilities,
+        {
+          id: "universal_energy_restore",
+          name: "Energy Focus",
+          type: "energy",
+          element: "light",
+          power: 45,
+          accuracy: 100,
+          energy_cost: 0,
+          cooldown: 0,
+          description: "Focus to restore 30-60 energy points",
+        },
+      ],
+    }
+  }
+
+  const setupRealtimeConnection = (battleId: string) => {
+    const channel = supabase
+      .channel(`battle:${battleId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "battles",
+          filter: `id=eq.${battleId}`,
+        },
+        (payload) => {
+          console.log("Battle update received:", payload.new)
+          handleBattleUpdate(payload.new as Battle)
+        },
+      )
+      .on("broadcast", { event: "move" }, (payload) => {
+        console.log("Move broadcast received:", payload)
+        handleOpponentMove(payload.payload)
+      })
+      .on("broadcast", { event: "player_joined" }, (payload) => {
+        console.log("Player joined broadcast received:", payload)
+        if (payload.payload.joinedPlayerId !== currentUserId && waitingForOpponent) {
+          // Show immediate notification that opponent joined
+          Alert.alert("Opponent Joined!", "Your opponent has joined the battle. Get ready to fight!", [
+            {
+              text: "Ready!",
+              onPress: () => {
+                console.log("Battle starting soon...")
+              },
+            },
+          ])
+        }
+      })
+      .subscribe((status) => {
+        console.log("Realtime connection status:", status)
+        if (status === "SUBSCRIBED") {
+          setConnectionStatus("connected")
+        } else if (status === "CLOSED") {
+          setConnectionStatus("disconnected")
+        }
+      })
+
+    setRealtimeChannel(channel)
+  }
+
+  const handleBattleUpdate = async (updatedBattle: Battle) => {
+    if (updatedBattle.status === "active" && waitingForOpponent) {
+      // Opponent joined, reload battle data
+      await loadBattleData(updatedBattle, currentUserId)
+
+      // Notify the battle initiator that opponent has joined
+      if (isPlayer1) {
+        // Show notification that opponent joined
+        Alert.alert("Opponent Joined!", "Your opponent has joined the battle. Get ready to fight!", [
+          {
+            text: "Let's Battle!",
+            onPress: () => {
+              // Battle will start automatically after this
+            },
+          },
+        ])
+
+        // Optional: Send a local notification
+        try {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Battle Ready!",
+              body: "Your opponent has joined the battle arena!",
+              sound: true,
+            },
+            trigger: null, // Immediate notification
+          })
+        } catch (error) {
+          console.log("Notification error:", error)
+        }
+      }
+    } else if (updatedBattle.status === "completed") {
+      // Battle ended
+      setGameOver(true)
+      setWinner(updatedBattle.winner_id === currentUserId ? "player1" : "player2")
+    } else if (updatedBattle.battle_data?.moves) {
+      // Process new moves
+      const moves = updatedBattle.battle_data.moves
+      const lastMove = moves[moves.length - 1]
+
+      if (lastMove && lastMove.player_id !== currentUserId) {
+        // Apply opponent's move
+        applyMoveToGame(lastMove, false)
+
+        // Update turn state
+        setCurrentTurn(updatedBattle.current_turn as "player1" | "player2")
+        setTurnTime(updatedBattle.turn_time_remaining)
+        setTurnNumber(updatedBattle.turn_number)
+      }
+    }
+  }
+
+  const handleOpponentMove = (move: any) => {
+    if (move.player_id === currentUserId) return // Ignore own moves
+
+    // Apply opponent's move
+    applyMoveToGame(move, false)
+
+    // Switch turns
+    setCurrentTurn(isPlayer1 ? "player1" : "player2")
+    setTurnTime(30)
+    setTurnNumber((prev) => prev + 1)
+  }
+
+  const applyMoveToGame = (move: any, isOwnMove: boolean) => {
+    const { ability, damage, healing, energyRestore, targetHealth, targetEnergy, attackerHealth, attackerEnergy } = move
+
+    // Update beast states based on move
+    if (isOwnMove) {
+      // Update opponent's beast (target)
+      if (damage && targetHealth !== undefined) {
+        if (isPlayer1) {
+          setPlayer2Beast((prev) => (prev ? { ...prev, health: targetHealth } : null))
+          player2Health.value = withSpring((targetHealth / (player2Beast?.maxHealth || 1)) * 100)
+        } else {
+          setPlayer1Beast((prev) => (prev ? { ...prev, health: targetHealth } : null))
+          player1Health.value = withSpring((targetHealth / (player1Beast?.maxHealth || 1)) * 100)
+        }
+      }
+
+      // Update own beast (attacker)
+      if (attackerHealth !== undefined && attackerEnergy !== undefined) {
+        if (isPlayer1) {
+          setPlayer1Beast((prev) => (prev ? { ...prev, health: attackerHealth, energy: attackerEnergy } : null))
+          player1Health.value = withSpring((attackerHealth / (player1Beast?.maxHealth || 1)) * 100)
+          player1Energy.value = withSpring((attackerEnergy / (player1Beast?.maxEnergy || 1)) * 100)
+        } else {
+          setPlayer2Beast((prev) => (prev ? { ...prev, health: attackerHealth, energy: attackerEnergy } : null))
+          player2Health.value = withSpring((attackerHealth / (player2Beast?.maxHealth || 1)) * 100)
+          player2Energy.value = withSpring((attackerEnergy / (player2Beast?.maxEnergy || 1)) * 100)
+        }
+      }
+    } else {
+      // Apply opponent's move (reverse perspective)
+      if (damage && targetHealth !== undefined) {
+        if (isPlayer1) {
+          setPlayer1Beast((prev) => (prev ? { ...prev, health: targetHealth } : null))
+          player1Health.value = withSpring((targetHealth / (player1Beast?.maxHealth || 1)) * 100)
+        } else {
+          setPlayer2Beast((prev) => (prev ? { ...prev, health: targetHealth } : null))
+          player2Health.value = withSpring((targetHealth / (player2Beast?.maxHealth || 1)) * 100)
+        }
+      }
+
+      if (attackerHealth !== undefined && attackerEnergy !== undefined) {
+        if (isPlayer1) {
+          setPlayer2Beast((prev) => (prev ? { ...prev, health: attackerHealth, energy: attackerEnergy } : null))
+          player2Health.value = withSpring((attackerHealth / (player2Beast?.maxHealth || 1)) * 100)
+          player2Energy.value = withSpring((attackerEnergy / (player2Beast?.maxEnergy || 1)) * 100)
+        } else {
+          setPlayer1Beast((prev) => (prev ? { ...prev, health: attackerHealth, energy: attackerEnergy } : null))
+          player1Health.value = withSpring((attackerHealth / (player1Beast?.maxHealth || 1)) * 100)
+          player1Energy.value = withSpring((attackerEnergy / (player1Beast?.maxEnergy || 1)) * 100)
+        }
+      }
+    }
+
     // Add to battle log
+    let logMessage = ""
+    const attackerName = isOwnMove ? (isPlayer1 ? player1Name : player2Name) : isPlayer1 ? player2Name : player1Name
+
+    if (ability.type === "heal") {
+      logMessage = `${attackerName} used ${ability.name}! Restored ${healing} health!`
+    } else if (ability.type === "energy") {
+      logMessage = `${attackerName} used ${ability.name}! Restored ${energyRestore} energy!`
+    } else {
+      logMessage = `${attackerName} used ${ability.name}!`
+      if (move.isCritical) logMessage += " Critical hit!"
+      if (damage) logMessage += ` Dealt ${damage} damage!`
+      if (move.effectiveness && move.effectiveness > 1) logMessage += " It's super effective!"
+      if (move.effectiveness && move.effectiveness < 1) logMessage += " It's not very effective..."
+    }
+
     setBattleLogs((prev) => [
       {
         id: Date.now().toString(),
-        message: `${currentTurn === "player1" ? player1Name : player2Name} ran out of time!`,
+        message: logMessage,
+        type: move.isCritical ? "system" : ability.type === "heal" ? "heal" : "attack",
+        timestamp: Date.now(),
+      },
+      ...prev.slice(0, 4),
+    ])
+
+    setShowBattleLog(true)
+    setTimeout(() => setShowBattleLog(false), 3000)
+
+    // Check for game over
+    if (targetHealth !== undefined && targetHealth <= 0) {
+      endBattle(isOwnMove ? currentUserId : isPlayer1 ? player2Beast?.id : player1Beast?.id)
+    }
+  }
+
+  const broadcastMove = async (ability: BeastAbility, moveData: any) => {
+    if (!battleId || !realtimeChannel) return
+
+    try {
+      const newMove = {
+        id: Date.now().toString(),
+        player_id: currentUserId,
+        ability,
+        ...moveData,
+        timestamp: Date.now(),
+      }
+
+      // Broadcast move via real-time channel for immediate response
+      await realtimeChannel.send({
+        type: "broadcast",
+        event: "move",
+        payload: newMove,
+      })
+
+      // Also update database for persistence
+      const { data: currentBattle, error: fetchError } = await supabase
+        .from("battles")
+        .select("battle_data, turn_number")
+        .eq("id", battleId)
+        .single()
+
+      if (fetchError) throw fetchError
+
+      const updatedBattleData = {
+        ...currentBattle.battle_data,
+        moves: [...(currentBattle.battle_data?.moves || []), newMove],
+        player1_beast_state: isPlayer1
+          ? {
+              health: moveData.attackerHealth,
+              energy: moveData.attackerEnergy,
+            }
+          : {
+              health: moveData.targetHealth,
+              energy: moveData.targetEnergy,
+            },
+        player2_beast_state: !isPlayer1
+          ? {
+              health: moveData.attackerHealth,
+              energy: moveData.attackerEnergy,
+            }
+          : {
+              health: moveData.targetHealth,
+              energy: moveData.targetEnergy,
+            },
+      }
+
+      // Update battle in database
+      const { error } = await supabase
+        .from("battles")
+        .update({
+          battle_data: updatedBattleData,
+          current_turn: isPlayer1 ? "player2" : "player1",
+          turn_number: currentBattle.turn_number + 1,
+          turn_time_remaining: 30,
+        })
+        .eq("id", battleId)
+
+      if (error) throw error
+
+      // Apply move locally
+      applyMoveToGame(newMove, true)
+
+      // Switch turns locally
+      setCurrentTurn(isPlayer1 ? "player2" : "player1")
+      setTurnTime(30)
+      setTurnNumber((prev) => prev + 1)
+    } catch (error) {
+      console.error("Error broadcasting move:", error)
+      Alert.alert("Connection Error", "Failed to send move. Please check your connection.")
+    }
+  }
+
+  const endBattle = async (winnerId: string) => {
+    if (!battleId) return
+
+    try {
+      await supabase
+        .from("battles")
+        .update({
+          status: "completed",
+          winner_id: winnerId,
+          ended_at: new Date().toISOString(),
+        })
+        .eq("id", battleId)
+
+      setGameOver(true)
+      setWinner(winnerId === currentUserId ? "player1" : "player2")
+
+      // Cleanup real-time connection
+      if (realtimeChannel) {
+        realtimeChannel.unsubscribe()
+      }
+    } catch (error) {
+      console.error("Error ending battle:", error)
+    }
+  }
+
+  const handleTimeUp = () => {
+    setBattleLogs((prev) => [
+      {
+        id: Date.now().toString(),
+        message: `${isMyTurn() ? "You" : "Opponent"} ran out of time!`,
         type: "system",
         timestamp: Date.now(),
       },
-      ...prev.slice(0, 4), // Keep only last 5 messages
+      ...prev.slice(0, 4),
     ])
 
     // Switch turns
-    setCurrentTurn(currentTurn === "player1" ? "player2" : "player1")
+    setCurrentTurn(isMyTurn() ? (isPlayer1 ? "player2" : "player1") : isPlayer1 ? "player1" : "player2")
     setTurnTime(30)
+    setTurnNumber((prev) => prev + 1)
+  }
 
-    // If it's now AI's turn, make them attack after a delay
-    if (currentTurn === "player1") {
-      setTimeout(() => {
-        handleAIAttack()
-      }, 1500)
-    }
+  const isMyTurn = () => {
+    return (isPlayer1 && currentTurn === "player1") || (!isPlayer1 && currentTurn === "player2")
   }
 
   // Fetch beast abilities from database
@@ -281,199 +968,11 @@ export default function BattleArenaScreen() {
     }
   }
 
-  // Update the fetchBattleData function
-  useEffect(() => {
-    const fetchBattleData = async () => {
-      setIsLoading(true)
-      try {
-        // Get user ID
-        const userId = await SecureStore.getItemAsync("userId")
+  const handleAttack = async (ability: BeastAbility) => {
+    if (gameOver || !isMyTurn() || waitingForOpponent) return
 
-        setPlayer1Name("You")
-        setPlayer2Name("Opponent")
-
-        // Get selected beast ID
-        const selectedBeastId = beastId || (await SecureStore.getItemAsync("selectedBeastId"))
-
-        if (!selectedBeastId) {
-          setError("No beast selected for battle. Please select a beast first.")
-          setIsLoading(false)
-          return
-        }
-
-        // Fetch player beast from database
-        const { data: playerBeastData, error: playerBeastError } = await supabase
-          .from("beasts")
-          .select("*")
-          .eq("id", selectedBeastId)
-          .single()
-
-        if (playerBeastError || !playerBeastData) {
-          setError("Failed to load your beast data. Please try again.")
-          setIsLoading(false)
-          return
-        }
-
-        // Parse metadata and get abilities
-        const playerMetadata = playerBeastData.metadata
-        const playerAbilityIds = playerMetadata.abilities || []
-        const playerAbilities = await fetchBeastAbilities(playerAbilityIds)
-
-        // Use allocated_stats instead of metadata stats
-        const allocatedStats = playerBeastData.allocated_stats || { attack: 50, defense: 50, speed: 50, health: 50 }
-
-        // Create player beast object
-        const playerBeast: Beast = {
-          ...playerBeastData,
-          health: allocatedStats.health * 4, // Use allocated health * 4 for max 200 HP
-          maxHealth: allocatedStats.health * 4,
-          energy: 100,
-          maxEnergy: 100,
-          level: playerMetadata.tier || 1,
-          element: playerAbilities[0]?.element || "fire", // Use first ability's element
-          stats: {
-            attack: allocatedStats.attack,
-            defense: allocatedStats.defense,
-            speed: allocatedStats.speed,
-            magic: allocatedStats.attack, // Use attack for magic
-          },
-          abilities: [
-            ...playerAbilities,
-            // Universal energy restoration ability
-            {
-              id: "universal_energy_restore",
-              name: "Energy Focus",
-              type: "energy",
-              element: "light",
-              power: 45,
-              accuracy: 100,
-              energy_cost: 0,
-              cooldown: 0,
-              description: "Focus to restore 30-60 energy points",
-            },
-          ],
-        }
-        setPlayer1Beast(playerBeast)
-
-        // Fetch opponent beast
-        const { data: opponentBeastData, error: opponentBeastError } = await supabase
-          .from("beasts")
-          .select("*, users!inner(wallet_address)")
-          .neq("owner_id", userId)
-          .order("created_at", { ascending: false })
-          .limit(10)
-
-        if (opponentBeastError || !opponentBeastData || opponentBeastData.length === 0) {
-          setError("Failed to find an opponent. Please try again later.")
-          setIsLoading(false)
-          return
-        }
-
-        // Select random opponent
-        const randomOpponent = opponentBeastData[Math.floor(Math.random() * opponentBeastData.length)]
-        const opponentMetadata = randomOpponent.metadata
-        const opponentAbilityIds = opponentMetadata.abilities || []
-        const opponentAbilities = await fetchBeastAbilities(opponentAbilityIds)
-
-        // Set opponent name to truncated wallet address
-        const opponentWalletAddress = randomOpponent.users?.wallet_address || "Unknown"
-        setPlayer2Name(truncateWalletAddress(opponentWalletAddress))
-
-        // Use allocated_stats for opponent too
-        const opponentAllocatedStats = randomOpponent.allocated_stats || {
-          attack: 50,
-          defense: 50,
-          speed: 50,
-          health: 50,
-        }
-
-        // Create opponent beast object
-        const opponentBeast: Beast = {
-          ...randomOpponent,
-          health: opponentAllocatedStats.health * 4,
-          maxHealth: opponentAllocatedStats.health * 4,
-          energy: 100,
-          maxEnergy: 100,
-          level: opponentMetadata.tier || 1,
-          element: opponentAbilities[0]?.element || "water",
-          stats: {
-            attack: opponentAllocatedStats.attack,
-            defense: opponentAllocatedStats.defense,
-            speed: opponentAllocatedStats.speed,
-            magic: opponentAllocatedStats.attack,
-          },
-          abilities: [
-            ...opponentAbilities,
-            // Universal energy restoration ability
-            {
-              id: "universal_energy_restore",
-              name: "Energy Focus",
-              type: "energy",
-              element: "light",
-              power: 45,
-              accuracy: 100,
-              energy_cost: 0,
-              cooldown: 0,
-              description: "Focus to restore 30-60 energy points",
-            },
-          ],
-        }
-        setPlayer2Beast(opponentBeast)
-
-        // Start battle after a short delay
-        setTimeout(() => {
-          setBattleStarted(true)
-        }, 1000)
-      } catch (error) {
-        console.error("Error fetching battle data:", error)
-        setError("An unexpected error occurred. Please try again.")
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchBattleData()
-  }, [beastId])
-
-  // Handle AI opponent's turn
-  useEffect(() => {
-    if (battleStarted && currentTurn === "player2" && !gameOver) {
-      const aiAttackDelay = setTimeout(() => {
-        handleAIAttack()
-      }, 2000)
-
-      return () => clearTimeout(aiAttackDelay)
-    }
-  }, [currentTurn, battleStarted, gameOver])
-
-  const handleAIAttack = () => {
-    if (!player2Beast || gameOver || !player2Beast.abilities.length) return
-
-    // Filter available moves (enough energy)
-    const availableMoves = player2Beast.abilities.filter((ability) => player2Beast.energy >= ability.energy_cost)
-
-    if (availableMoves.length === 0) {
-      // No moves available, skip turn
-      setTimeout(() => {
-        regenerateEnergy("player2")
-        processEndOfTurn("player2")
-      }, 1000)
-      return
-    }
-
-    // Randomly select a move
-    const randomMove = availableMoves[Math.floor(Math.random() * availableMoves.length)]
-
-    // Execute the attack
-    handleAttack(randomMove, "player2")
-  }
-
-  // Replace the handleAttack function completely
-  const handleAttack = (ability: BeastAbility, attacker: "player1" | "player2" = "player1") => {
-    if (gameOver) return
-
-    const attackerBeast = attacker === "player1" ? player1Beast : player2Beast
-    const defenderBeast = attacker === "player1" ? player2Beast : player1Beast
+    const attackerBeast = isPlayer1 ? player1Beast : player2Beast
+    const defenderBeast = isPlayer1 ? player2Beast : player1Beast
 
     if (!attackerBeast || !defenderBeast) return
 
@@ -488,12 +987,6 @@ export default function BattleArenaScreen() {
         },
         ...prev.slice(0, 4),
       ])
-
-      // Skip turn but still regenerate energy and process status effects
-      setTimeout(() => {
-        regenerateEnergy(attacker)
-        processEndOfTurn(attacker)
-      }, 1000)
       return
     }
 
@@ -505,38 +998,22 @@ export default function BattleArenaScreen() {
     const missChance = 100 - ability.accuracy
 
     if (hitRoll < missChance) {
-      // Attack missed - add shake animation for the attacker
-      shakeValue.value = withSequence(
-        withTiming(5, { duration: 100 }),
-        withTiming(-5, { duration: 100 }),
-        withTiming(0, { duration: 100 }),
-      )
-
-      setBattleLogs((prev) => [
-        {
-          id: Date.now().toString(),
-          message: `${attackerBeast.name}'s ${ability.name} missed!`,
-          type: "system",
-          timestamp: Date.now(),
-        },
-        ...prev.slice(0, 4),
-      ])
-
-      setShowBattleLog(true)
-      setTimeout(() => setShowBattleLog(false), 2000)
-
-      // Still consume energy and end turn
-      setTimeout(() => {
-        regenerateEnergy(attacker)
-        processEndOfTurn(attacker)
-      }, 1000)
+      // Attack missed
+      await broadcastMove(ability, {
+        damage: 0,
+        missed: true,
+        attackerHealth: attackerBeast.health,
+        attackerEnergy: Math.max(0, attackerBeast.energy - ability.energy_cost),
+        targetHealth: defenderBeast.health,
+        targetEnergy: defenderBeast.energy,
+      })
       return
     }
 
-    // Calculate critical hit chance (base 10%, +5% for every 25% health lost)
+    // Calculate critical hit chance
     const healthPercentage = attackerBeast.health / attackerBeast.maxHealth
     const baseCritChance = 10
-    const lowHealthBonus = (1 - healthPercentage) * 20 // Up to 20% bonus when near death
+    const lowHealthBonus = (1 - healthPercentage) * 20
     const critChance = baseCritChance + lowHealthBonus
     const critRoll = Math.random() * 100
     const isCritical = critRoll < critChance
@@ -544,6 +1021,7 @@ export default function BattleArenaScreen() {
     // Enhanced damage calculation based on ability type
     let damage = 0
     let healing = 0
+    let energyRestore = 0
     let effectiveness = 1.0
 
     if (ability.type === "attack") {
@@ -555,251 +1033,44 @@ export default function BattleArenaScreen() {
         effectiveness = elementalChart[attackerElement][defenderElement]
       }
 
-      // Base damage calculation using ability power and beast stats
+      // Base damage calculation
       const attackStat = attackerBeast.stats.attack
       const defenseStat = defenderBeast.stats.defense
 
       damage = ability.power * (attackStat / defenseStat) * 0.4 * effectiveness
-
-      // Add larger damage variance (±25%)
       damage = damage * (0.75 + Math.random() * 0.5)
 
-      // Apply critical hit
       if (isCritical) {
         damage *= 2
-        // Critical hits restore some energy
-        const energyRestore = Math.min(15, attackerBeast.maxEnergy - attackerBeast.energy)
-        if (attacker === "player1") {
-          setPlayer1Beast((prev) => ({ ...prev, energy: prev.energy + energyRestore }))
-        } else {
-          setPlayer2Beast((prev) => ({ ...prev, energy: prev.energy + energyRestore }))
-        }
       }
 
-      // Round damage
       damage = Math.round(damage)
     } else if (ability.type === "heal") {
-      // Healing ability
-      healing = Math.round(ability.power * 0.8) // Heal for 80% of power value
-      const newHealth = Math.min(attackerBeast.maxHealth, attackerBeast.health + healing)
-
-      if (attacker === "player1") {
-        setPlayer1Beast((prev) => ({ ...prev, health: newHealth }))
-        player1Health.value = withSpring((newHealth / attackerBeast.maxHealth) * 100)
-      } else {
-        setPlayer2Beast((prev) => ({ ...prev, health: newHealth }))
-        player2Health.value = withSpring((newHealth / attackerBeast.maxHealth) * 100)
-      }
+      healing = Math.round(ability.power * 0.8)
     } else if (ability.type === "energy") {
-      // Energy restoration ability
-      const energyRestore = 30 + Math.floor(Math.random() * 31) // Random 30-60 energy
-      const newEnergy = Math.min(attackerBeast.maxEnergy, attackerBeast.energy + energyRestore)
-
-      if (attacker === "player1") {
-        setPlayer1Beast((prev) => ({ ...prev, energy: newEnergy }))
-        player1Energy.value = withSpring((newEnergy / attackerBeast.maxEnergy) * 100)
-      } else {
-        setPlayer2Beast((prev) => ({ ...prev, energy: newEnergy }))
-        player2Energy.value = withSpring((newEnergy / attackerBeast.maxEnergy) * 100)
-      }
-
-      // Add energy restore to battle log
-      setBattleLogs((prev) => [
-        {
-          id: Date.now().toString() + "_energy_restore",
-          message: `${attackerBeast.name} restored ${energyRestore} energy!`,
-          type: "system",
-          timestamp: Date.now(),
-        },
-        ...prev.slice(0, 4),
-      ])
-    } else if (ability.type === "buff" || ability.type === "debuff") {
-      // Status effects and buffs/debuffs
-      applyStatusEffect(ability, ability.type === "buff" ? attackerBeast : defenderBeast, attacker)
+      energyRestore = 30 + Math.floor(Math.random() * 31)
     }
 
-    // Enhanced animations
-    if (isCritical) {
-      // Critical hit animation
-      shakeValue.value = withSequence(
-        withTiming(15, { duration: 80 }),
-        withTiming(-15, { duration: 80 }),
-        withTiming(10, { duration: 80 }),
-        withTiming(-10, { duration: 80 }),
-        withTiming(0, { duration: 80 }),
-      )
-      flashValue.value = withSequence(
-        withTiming(1, { duration: 150 }),
-        withTiming(0, { duration: 150 }),
-        withTiming(1, { duration: 150 }),
-        withTiming(0, { duration: 150 }),
-      )
-    } else {
-      // Normal hit animation
-      shakeValue.value = withSequence(
-        withTiming(10, { duration: 100 }),
-        withTiming(-10, { duration: 100 }),
-        withTiming(0, { duration: 100 }),
-      )
-      flashValue.value = withSequence(withTiming(1, { duration: 100 }), withTiming(0, { duration: 100 }))
-    }
-
-    battleFieldScale.value = withSequence(
-      withTiming(1.02, { duration: 100 }),
-      withTiming(0.98, { duration: 100 }),
-      withTiming(1, { duration: 100 }),
+    // Calculate new health and energy values
+    const newDefenderHealth = Math.max(0, defenderBeast.health - damage)
+    const newAttackerHealth = Math.min(attackerBeast.maxHealth, attackerBeast.health + healing)
+    const newAttackerEnergy = Math.min(
+      attackerBeast.maxEnergy,
+      Math.max(0, attackerBeast.energy - ability.energy_cost + energyRestore),
     )
 
-    // Apply damage and update health
-    if (damage > 0) {
-      if (attacker === "player1") {
-        const newHealth = Math.max(0, defenderBeast.health - damage)
-        player2Health.value = withSpring((newHealth / defenderBeast.maxHealth) * 100)
-        setPlayer2Beast((prev) => ({ ...prev, health: newHealth }))
-
-        if (newHealth <= 0) {
-          handleGameOver("player1")
-          return
-        }
-      } else {
-        const newHealth = Math.max(0, defenderBeast.health - damage)
-        player1Health.value = withSpring((newHealth / defenderBeast.maxHealth) * 100)
-        setPlayer1Beast((prev) => ({ ...prev, health: newHealth }))
-
-        if (newHealth <= 0) {
-          handleGameOver("player2")
-          return
-        }
-      }
-    }
-
-    // Update energy
-    if (attacker === "player1") {
-      const newEnergy = Math.max(0, attackerBeast.energy - ability.energy_cost)
-      player1Energy.value = withSpring((newEnergy / attackerBeast.maxEnergy) * 100)
-      setPlayer1Beast((prev) => ({ ...prev, energy: newEnergy }))
-    } else {
-      const newEnergy = Math.max(0, attackerBeast.energy - ability.energy_cost)
-      player2Energy.value = withSpring((newEnergy / attackerBeast.maxEnergy) * 100)
-      setPlayer2Beast((prev) => ({ ...prev, energy: newEnergy }))
-    }
-
-    // Create battle log message
-    let logMessage = ""
-    if (ability.type === "heal") {
-      logMessage = `${attackerBeast.name} used ${ability.name}! Restored ${healing} health!`
-    } else if (ability.type === "energy") {
-      // Energy restore message is already added above
-      logMessage = `${attackerBeast.name} used ${ability.name}!`
-    } else if (ability.type === "buff" || ability.type === "debuff") {
-      logMessage = `${attackerBeast.name} used ${ability.name}!`
-    } else {
-      logMessage = `${attackerBeast.name} used ${ability.name}!`
-      if (isCritical) logMessage += " Critical hit!"
-      if (damage > 0) logMessage += ` Dealt ${damage} damage!`
-      if (effectiveness > 1) logMessage += " It's super effective!"
-      if (effectiveness < 1) logMessage += " It's not very effective..."
-    }
-
-    setBattleLogs((prev) => [
-      {
-        id: Date.now().toString(),
-        message: logMessage,
-        type: isCritical ? "system" : ability.type === "heal" ? "heal" : "attack",
-        timestamp: Date.now(),
-      },
-      ...prev.slice(0, 4),
-    ])
-
-    setShowBattleLog(true)
-    setTimeout(() => setShowBattleLog(false), 3000)
-
-    // Process end of turn after a delay
-    setTimeout(() => {
-      regenerateEnergy(attacker)
-      processEndOfTurn(attacker)
-    }, 1500)
-  }
-
-  // Add new helper functions
-  const regenerateEnergy = (attacker: "player1" | "player2") => {
-    // Random energy regeneration (3-8 points)
-    const energyGain = 3 + Math.floor(Math.random() * 6)
-
-    if (attacker === "player1") {
-      setPlayer1Beast((prev) => {
-        const newEnergy = Math.min(prev.maxEnergy, prev.energy + energyGain)
-        player1Energy.value = withSpring((newEnergy / prev.maxEnergy) * 100)
-        return { ...prev, energy: newEnergy }
-      })
-    } else {
-      setPlayer2Beast((prev) => {
-        const newEnergy = Math.min(prev.maxEnergy, prev.energy + energyGain)
-        player2Energy.value = withSpring((newEnergy / prev.maxEnergy) * 100)
-        return { ...prev, energy: newEnergy }
-      })
-    }
-
-    setBattleLogs((prev) => [
-      {
-        id: Date.now().toString() + "_energy",
-        message: `${attacker === "player1" ? player1Name : player2Name} regenerated ${energyGain} energy!`,
-        type: "system",
-        timestamp: Date.now(),
-      },
-      ...prev.slice(0, 4),
-    ])
-  }
-
-  const applyStatusEffect = (ability: BeastAbility, target: Beast, attacker: "player1" | "player2") => {
-    let statusType: "burn" | "freeze" | "poison" | undefined
-    let duration = 3
-
-    // Determine status effect based on ability element
-    if (ability.element === "fire") {
-      statusType = "burn"
-    } else if (ability.element === "water") {
-      statusType = "freeze"
-      duration = 2 // Freeze is shorter but more impactful
-    } else if (ability.element === "dark") {
-      statusType = "poison"
-    }
-
-    if (statusType) {
-      const newStatus = { type: statusType, duration }
-
-      if (attacker === "player1") {
-        setPlayer2Beast((prev) => ({ ...prev, status: newStatus }))
-      } else {
-        setPlayer1Beast((prev) => ({ ...prev, status: newStatus }))
-      }
-
-      setBattleLogs((prev) => [
-        {
-          id: Date.now().toString() + "_status_apply",
-          message: `${target.name} is now ${statusType}ed!`,
-          type: "status",
-          timestamp: Date.now(),
-        },
-        ...prev.slice(0, 4),
-      ])
-    }
-  }
-
-  const processEndOfTurn = (attacker: "player1" | "player2") => {
-    // Process status effects for both beasts
-    if (player1Beast) {
-      processStatusEffects(player1Beast, setPlayer1Beast, player1Health)
-    }
-    if (player2Beast) {
-      processStatusEffects(player2Beast, setPlayer2Beast, player2Health)
-    }
-
-    // Switch turns if game is not over
-    if (!gameOver) {
-      setCurrentTurn(attacker === "player1" ? "player2" : "player1")
-      setTurnTime(30)
-    }
+    // Broadcast move
+    await broadcastMove(ability, {
+      damage,
+      healing,
+      energyRestore,
+      isCritical,
+      effectiveness,
+      targetHealth: newDefenderHealth,
+      targetEnergy: defenderBeast.energy,
+      attackerHealth: newAttackerHealth,
+      attackerEnergy: newAttackerEnergy,
+    })
   }
 
   // Animation styles
@@ -888,19 +1159,19 @@ export default function BattleArenaScreen() {
   // Error screen
   if (error) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={arenaStyles.container}>
         <LinearGradient
           colors={["#0F0F23", "#1E1B4B", "#312E81"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View style={styles.errorContainer}>
+        <View style={arenaStyles.errorContainer}>
           <AlertTriangle size={48} color="#EF4444" />
-          <Text style={styles.errorTitle}>Battle Error</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.errorButton} onPress={() => router.back()}>
-            <Text style={styles.errorButtonText}>Return to Map</Text>
+          <Text style={arenaStyles.errorTitle}>Battle Error</Text>
+          <Text style={arenaStyles.errorText}>{error}</Text>
+          <TouchableOpacity style={arenaStyles.errorButton} onPress={() => router.back()}>
+            <Text style={arenaStyles.errorButtonText}>Return to Map</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -908,413 +1179,168 @@ export default function BattleArenaScreen() {
   }
 
   // Loading screen
-  if (isLoading || !player1Beast || !player2Beast) {
+  if (isLoading || !player1Beast || (waitingForOpponent && !player2Beast)) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={arenaStyles.container}>
         <LinearGradient
           colors={["#0F0F23", "#1E1B4B", "#312E81"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View style={styles.loadingContainer}>
+        <View style={arenaStyles.loadingContainer}>
           <Animated.View entering={ZoomIn}>
-            <Activity size={64} color="#7C3AED" />
+            {waitingForOpponent ? <Users size={64} color="#7C3AED" /> : <Activity size={64} color="#7C3AED" />}
           </Animated.View>
-          <Animated.Text entering={FadeIn.delay(300)} style={styles.loadingText}>
-            Preparing Epic Battle...
+          <Animated.Text entering={FadeIn.delay(300)} style={arenaStyles.loadingText}>
+            {waitingForOpponent ? "Waiting for Opponent..." : "Preparing Epic Battle..."}
           </Animated.Text>
-          <Animated.Text entering={FadeIn.delay(600)} style={styles.loadingSubtext}>
-            Loading beast abilities from database...
+          <Animated.Text entering={FadeIn.delay(600)} style={arenaStyles.loadingSubtext}>
+            {waitingForOpponent ? "Share your battle code with a friend!" : "Loading beast abilities from database..."}
           </Animated.Text>
+
+          {/* Connection Status */}
+          <View style={arenaStyles.connectionStatus}>
+            <Wifi size={16} color={connectionStatus === "connected" ? "#10B981" : "#EF4444"} />
+            <Text
+              style={[arenaStyles.connectionText, { color: connectionStatus === "connected" ? "#10B981" : "#EF4444" }]}
+            >
+              {connectionStatus === "connected" ? "Connected" : "Connecting..."}
+            </Text>
+          </View>
         </View>
       </SafeAreaView>
     )
   }
 
-  const handleGameOver = (winner: "player1" | "player2") => {
-    setGameOver(true)
-    setWinner(winner)
+  // Battle code sharing screen
+  if (waitingForOpponent && battleId) {
+    return (
+      <SafeAreaView style={arenaStyles.container}>
+        <LinearGradient
+          colors={["#0F0F23", "#1E1B4B", "#312E81"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={arenaStyles.battleCodeContainer}>
+          <Animated.View entering={ZoomIn}>
+            <Users size={64} color="#7C3AED" />
+          </Animated.View>
+          <Animated.Text entering={FadeIn.delay(300)} style={arenaStyles.battleCodeTitle}>
+            Battle Room Created!
+          </Animated.Text>
+          <Animated.Text entering={FadeIn.delay(600)} style={arenaStyles.battleCodeSubtext}>
+            Share this code with your friend to join the battle:
+          </Animated.Text>
+
+          {/* Battle Code Display */}
+          <Animated.View entering={SlideInUp.delay(900)} style={arenaStyles.battleCodeCard}>
+            <BlurView intensity={60} tint="dark" style={arenaStyles.battleCodeCardContent}>
+              <LinearGradient
+                colors={["rgba(124, 58, 237, 0.4)", "rgba(0, 0, 0, 0.8)"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <Text style={arenaStyles.battleCodeText}>{battleId.slice(-8).toUpperCase()}</Text>
+              <TouchableOpacity
+                style={arenaStyles.copyCodeButton}
+                onPress={() => {
+                  // Copy to clipboard functionality would go here
+                  Alert.alert("Copied!", "Battle code copied to clipboard")
+                }}
+              >
+                <Text style={arenaStyles.copyCodeButtonText}>Copy Code</Text>
+              </TouchableOpacity>
+            </BlurView>
+          </Animated.View>
+
+          {/* Connection Status */}
+          <View style={arenaStyles.connectionStatus}>
+            <Wifi size={16} color={connectionStatus === "connected" ? "#10B981" : "#EF4444"} />
+            <Text
+              style={[arenaStyles.connectionText, { color: connectionStatus === "connected" ? "#10B981" : "#EF4444" }]}
+            >
+              {connectionStatus === "connected" ? "Connected" : "Connecting..."}
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
+    )
   }
 
-  const handleExitBattle = () => {
-    router.back()
-  }
-
+  // Main battle screen
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Enhanced Background */}
+    <SafeAreaView style={arenaStyles.container}>
       <LinearGradient
-        colors={["#0F0F23", "#1E1B4B", "#312E81", "#1E1B4B", "#0F0F23"]}
+        colors={["#0F0F23", "#1E1B4B", "#312E81"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-
-      {/* Animated particles background */}
-      <View style={styles.particlesContainer}>
-        {[...Array(20)].map((_, i) => (
-          <Animated.View
-            key={i}
-            entering={FadeIn.delay(i * 100)}
-            style={[
-              styles.particle,
-              {
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 3}s`,
-              },
-            ]}
-          />
+      {/* Battle Field */}
+      <Animated.View style={[battleStyles.battleField, battleFieldAnimation]}>
+        <Image source={vsImage} style={battleStyles.vsImage} />
+        {/* Player 1 Beast */}
+        <Animated.View style={[battleStyles.playerBeastContainer, battleStyles.player1BeastContainer]}>
+          <Image source={{ uri: getImageUrl(player1Beast?.image_url) }} style={battleStyles.beastImage} />
+          <View style={battleStyles.beastStatsContainer}>
+            <Text style={battleStyles.beastName}>{player1Name}</Text>
+            <View style={battleStyles.healthBarContainer}>
+              <Text style={battleStyles.healthText}>Health: {player1Beast?.health}</Text>
+              <Animated.View style={[battleStyles.healthBar, player1HealthStyle]} />
+            </View>
+            <View style={battleStyles.energyBarContainer}>
+              <Text style={battleStyles.energyText}>Energy: {player1Beast?.energy}</Text>
+              <Animated.View style={[battleStyles.energyBar, player1EnergyStyle]} />
+            </View>
+          </View>
+        </Animated.View>
+        {/* Player 2 Beast */}
+        <Animated.View style={[battleStyles.playerBeastContainer, battleStyles.player2BeastContainer]}>
+          <Image source={{ uri: getImageUrl(player2Beast?.image_url) }} style={battleStyles.beastImage} />
+          <View style={battleStyles.beastStatsContainer}>
+            <Text style={battleStyles.beastName}>{player2Name}</Text>
+            <View style={battleStyles.healthBarContainer}>
+              <Text style={battleStyles.healthText}>Health: {player2Beast?.health}</Text>
+              <Animated.View style={[battleStyles.healthBar, player2HealthStyle]} />
+            </View>
+            <View style={battleStyles.energyBarContainer}>
+              <Text style={battleStyles.energyText}>Energy: {player2Beast?.energy}</Text>
+              <Animated.View style={[battleStyles.energyBar, player2EnergyStyle]} />
+            </View>
+          </View>
+        </Animated.View>
+      </Animated.View>
+      {/* Abilities */}
+      <View style={battleStyles.abilitiesContainer}>
+        {player1Beast?.abilities.map((ability) => (
+          <TouchableOpacity
+            key={ability.id}
+            style={[battleStyles.abilityButton, { backgroundColor: getAbilityTypeColor(ability.type) }]}
+            onPress={() => handleAttack(ability)}
+            disabled={!isMyTurn() || selectedMove !== null}
+          >
+            <Text style={battleStyles.abilityText}>{ability.name}</Text>
+          </TouchableOpacity>
         ))}
       </View>
-
-      {/* Battle Arena */}
-      <Animated.View style={[styles.arenaContainer, battleFieldAnimation]}>
-        {/* Enhanced Enemy Stats (Top) */}
-        <Animated.View entering={SlideInDown.delay(200)} style={styles.enemyStats}>
-          <BlurView intensity={60} tint="dark" style={styles.modernStatsCard}>
-            <LinearGradient
-              colors={[`${getElementColor(player2Beast.element)}40`, "rgba(0, 0, 0, 0.8)"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <View style={styles.statsHeader}>
-              <View style={styles.playerInfo}>
-                <View style={styles.playerNameContainer}>
-                  <Text style={styles.playerName}>{player2Name}</Text>
-                  <View style={styles.modernRankBadge}>
-                    <Crown size={14} color="#FFD700" />
-                    <Text style={styles.rankText}>#{player2Beast.level}</Text>
-                  </View>
-                </View>
-                <View style={styles.beastInfo}>
-                  <Text style={styles.beastName}>{player2Beast.name}</Text>
-                  <View style={styles.modernElementBadge}>
-                    {createElement(getElementIcon(player2Beast.element), {
-                      size: 14,
-                      color: getElementColor(player2Beast.element),
-                    })}
-                    <Text style={[styles.elementText, { color: getElementColor(player2Beast.element) }]}>
-                      {player2Beast.element}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.modernStatsGrid}>
-              <View style={styles.modernStatItem}>
-                <Heart size={18} color="#EF4444" />
-                <View style={styles.modernStatBarContainer}>
-                  <Animated.View style={[styles.modernStatBar, player2HealthStyle, { backgroundColor: "#EF4444" }]} />
-                  <Text style={styles.modernStatText}>{Math.round(player2Beast.health) || 0}</Text>
-                </View>
-              </View>
-
-              <View style={styles.modernStatItem}>
-                <Zap size={18} color="#7C3AED" />
-                <View style={styles.modernStatBarContainer}>
-                  <Animated.View style={[styles.modernStatBar, player2EnergyStyle, { backgroundColor: "#7C3AED" }]} />
-                  <Text style={styles.modernStatText}>{Math.round(player2Beast.energy)}</Text>
-                </View>
-              </View>
-              {player2Beast.status && (
-                <View style={styles.statusEffectContainer}>
-                  <Text style={styles.statusEffectText}>
-                    {player2Beast.status.type}: {player2Beast.status.duration} turns
-                  </Text>
-                </View>
-              )}
-            </View>
-          </BlurView>
-        </Animated.View>
-
-        {/* Enhanced Battle Scene */}
-        <View style={styles.battleScene}>
-          {/* Modern Battle Timer */}
-          {!gameOver && (
-            <Animated.View entering={BounceIn.delay(500)} style={styles.modernBattleTimer}>
-              <BlurView intensity={80} tint="dark" style={styles.modernTimerCard}>
-                <LinearGradient
-                  colors={[
-                    turnTime <= 10 ? "rgba(239, 68, 68, 0.6)" : "rgba(124, 58, 237, 0.4)",
-                    "rgba(245, 158, 11, 0.4)",
-                  ]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <Timer size={20} color="#F59E0B" />
-                <Text style={styles.modernTimerText}>{turnTime}</Text>
-                <Text style={styles.modernTurnText}>{currentTurn === "player1" ? "Your Turn" : "Enemy Turn"}</Text>
-                <View
-                  style={{
-                    position: "absolute",
-                    top: -2,
-                    left: -2,
-                    right: -2,
-                    bottom: -2,
-                    borderRadius: 26,
-                    borderWidth: 2,
-                    borderColor: turnTime <= 10 ? "#EF4444" : "#7C3AED",
-                    opacity: 0.6,
-                  }}
-                />
-              </BlurView>
-            </Animated.View>
-          )}
-
-          {/* Enhanced Enemy Beast */}
-          <Animated.View
-            ref={player2BeastRef}
-            entering={SlideInLeft.delay(400)}
-            style={[styles.modernBeastContainer, styles.enemyBeastContainer]}
-          >
-            <LinearGradient
-              colors={[`${getElementColor(player2Beast.element)}60`, "transparent"]}
-              style={styles.modernBeastGlow}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-            />
-            <View style={styles.beastImageContainer}>
-              <Image
-                source={{ uri: getImageUrl(player2Beast.image_url) }}
-                style={styles.modernBeastImage}
-                resizeMode="contain"
-                onError={(e) => console.log("Error loading enemy beast image:", e.nativeEvent.error)}
-              />
-            </View>
-            <View style={styles.beastShadow} />
-          </Animated.View>
-
-          {/* Enhanced Player Beast */}
-          <Animated.View
-            ref={player1BeastRef}
-            entering={SlideInRight.delay(400)}
-            style={[styles.modernBeastContainer, styles.playerBeastContainer]}
-          >
-            <LinearGradient
-              colors={[`${getElementColor(player1Beast.element)}60`, "transparent"]}
-              style={styles.modernBeastGlow}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-            />
-            <View style={styles.beastImageContainer}>
-              <Image
-                source={{ uri: getImageUrl(player1Beast.image_url) }}
-                style={styles.modernBeastImage}
-                resizeMode="contain"
-                onError={(e) => console.log("Error loading player beast image:", e.nativeEvent.error)}
-              />
-            </View>
-            <View style={styles.beastShadow} />
-          </Animated.View>
-
-          {/* Enhanced VS Badge - Show during battle */}
-          {battleStarted && !gameOver && (
-            <Animated.View entering={ZoomIn.delay(600)} style={styles.modernVsBadge}>
-              <BlurView intensity={80} tint="dark" style={styles.modernVsBadgeContent}>
-                <LinearGradient
-                  colors={["rgba(239, 68, 68, 0.6)", "rgba(124, 58, 237, 0.6)"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <Image source={vsImage} style={styles.vsImage} resizeMode="contain" />
-                <View style={styles.vsGlow} />
-              </BlurView>
-            </Animated.View>
-          )}
-
-          {/* Enhanced Game Over Overlay */}
-          {gameOver && (
-            <Animated.View entering={ZoomIn} style={styles.gameOverOverlay}>
-              <BlurView intensity={60} tint="dark" style={styles.modernGameOverCard}>
-                <LinearGradient
-                  colors={[
-                    winner === "player1" ? "rgba(16, 185, 129, 0.4)" : "rgba(239, 68, 68, 0.4)",
-                    "rgba(0, 0, 0, 0.8)",
-                  ]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <Text style={styles.modernGameOverTitle}>{winner === "player1" ? "🏆 VICTORY!" : "💀 DEFEAT!"}</Text>
-                <Text style={styles.modernGameOverText}>
-                  {winner === "player1"
-                    ? `Your ${player1Beast.name} has triumphed over ${player2Beast.name}!`
-                    : `Your ${player1Beast.name} has fallen to ${player2Beast.name}!`}
-                </Text>
-                <TouchableOpacity style={styles.modernExitButton} onPress={() => router.back()}>
-                  <Text style={styles.modernExitButtonText}>Return to Map</Text>
-                </TouchableOpacity>
-              </BlurView>
-            </Animated.View>
-          )}
+      {/* Battle Log */}
+      {showBattleLog && (
+        <View style={battleStyles.battleLogContainer}>
+          {battleLogs.map((log) => (
+            <Text key={log.id} style={[battleStyles.battleLogText, { color: getAbilityTypeColor(log.type) }]}>
+              {log.message}
+            </Text>
+          ))}
         </View>
-
-        {/* Enhanced Player Stats (Bottom) */}
-        <Animated.View entering={SlideInUp.delay(200)} style={styles.playerStats}>
-          <BlurView intensity={60} tint="dark" style={styles.modernStatsCard}>
-            <LinearGradient
-              colors={[`${getElementColor(player1Beast.element)}40`, "rgba(0, 0, 0, 0.8)"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <View style={styles.statsHeader}>
-              <View style={styles.playerInfo}>
-                <View style={styles.playerNameContainer}>
-                  <Text style={styles.playerName}>{player1Name}</Text>
-                  <View style={styles.modernRankBadge}>
-                    <Crown size={14} color="#FFD700" />
-                    <Text style={styles.rankText}>#{player1Beast.level}</Text>
-                  </View>
-                </View>
-                <View style={styles.beastInfo}>
-                  <Text style={styles.beastName}>{player1Beast.name}</Text>
-                  <View style={styles.modernElementBadge}>
-                    {createElement(getElementIcon(player1Beast.element), {
-                      size: 14,
-                      color: getElementColor(player1Beast.element),
-                    })}
-                    <Text style={[styles.elementText, { color: getElementColor(player1Beast.element) }]}>
-                      {player1Beast.element}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.modernStatsGrid}>
-              <View style={styles.modernStatItem}>
-                <Heart size={18} color="#EF4444" />
-                <View style={styles.modernStatBarContainer}>
-                  <Animated.View style={[styles.modernStatBar, player1HealthStyle, { backgroundColor: "#EF4444" }]} />
-                  <Text style={styles.modernStatText}>{Math.round(player1Beast.health) || 0}</Text>
-                </View>
-              </View>
-
-              <View style={styles.modernStatItem}>
-                <Zap size={18} color="#7C3AED" />
-                <View style={styles.modernStatBarContainer}>
-                  <Animated.View style={[styles.modernStatBar, player1EnergyStyle, { backgroundColor: "#7C3AED" }]} />
-                  <Text style={styles.modernStatText}>{Math.round(player1Beast.energy)}</Text>
-                </View>
-              </View>
-              {player1Beast.status && (
-                <View style={styles.statusEffectContainer}>
-                  <Text style={styles.statusEffectText}>
-                    {player1Beast.status.type}: {player1Beast.status.duration} turns
-                  </Text>
-                </View>
-              )}
-            </View>
-          </BlurView>
-        </Animated.View>
-
-        {/* Enhanced Battle Log */}
-        {showBattleLog && (
-          <Animated.View entering={SlideInLeft} style={styles.modernBattleLog}>
-            <BlurView intensity={60} tint="dark" style={styles.modernBattleLogCard}>
-              <LinearGradient
-                colors={["rgba(124, 58, 237, 0.2)", "rgba(0, 0, 0, 0.8)"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-              {battleLogs.map((log) => (
-                <Text key={log.id} style={[styles.modernLogText, styles[`log${log.type}`]]}>
-                  {log.message}
-                </Text>
-              ))}
-            </BlurView>
-          </Animated.View>
-        )}
-
-        {/* Enhanced Moves Panel */}
-        {currentTurn === "player1" && !gameOver && (
-          <Animated.View entering={SlideInUp.delay(300)} style={styles.modernMovesPanel}>
-            <BlurView intensity={60} tint="dark" style={styles.modernMovesPanelContent}>
-              <LinearGradient
-                colors={["rgba(124, 58, 237, 0.2)", "rgba(0, 0, 0, 0.8)"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-              <View style={styles.modernMovesGrid}>
-                {player1Beast.abilities.map((ability) => (
-                  <TouchableOpacity
-                    key={ability.id}
-                    style={[
-                      styles.modernMoveCard,
-                      { borderColor: getAbilityTypeColor(ability.type) },
-                      player1Beast.energy < ability.energy_cost && styles.disabledMove,
-                    ]}
-                    onPress={() => player1Beast.energy >= ability.energy_cost && handleAttack(ability)}
-                    disabled={player1Beast.energy < ability.energy_cost}
-                  >
-                    <LinearGradient
-                      colors={[`${getAbilityTypeColor(ability.type)}30`, "rgba(0, 0, 0, 0.8)"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={StyleSheet.absoluteFill}
-                    />
-                    <View style={styles.modernMoveHeader}>
-                      {createElement(getElementIcon(ability.element), {
-                        size: 28,
-                        color: getElementColor(ability.element),
-                      })}
-                      <View
-                        style={[styles.modernMoveType, { backgroundColor: `${getAbilityTypeColor(ability.type)}50` }]}
-                      >
-                        <Text style={[styles.modernMoveTypeText, { color: getAbilityTypeColor(ability.type) }]}>
-                          {ability.type}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.modernMoveName}>{ability.name}</Text>
-                    <View style={styles.modernMoveStats}>
-                      <View style={styles.modernMoveStat}>
-                        <Swords size={16} color={getAbilityTypeColor(ability.type)} />
-                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
-                          {ability.power}
-                        </Text>
-                      </View>
-                      <View style={styles.modernMoveStat}>
-                        <Star size={16} color={getAbilityTypeColor(ability.type)} />
-                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
-                          {ability.accuracy}%
-                        </Text>
-                      </View>
-                      <View style={styles.modernMoveStat}>
-                        <Zap size={16} color={getAbilityTypeColor(ability.type)} />
-                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
-                          {ability.energy_cost}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </BlurView>
-          </Animated.View>
-        )}
-
-        {/* Enhanced Back Button */}
-        <TouchableOpacity style={styles.modernBackButton} onPress={handleExitBattle}>
-          <BlurView intensity={60} tint="dark" style={styles.modernBackButtonContent}>
-            <X size={24} color="#ffffff" />
-          </BlurView>
-        </TouchableOpacity>
-      </Animated.View>
+      )}
     </SafeAreaView>
   )
 }
 
-const styles = StyleSheet.create({
+const battleStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0F0F23",
@@ -1351,6 +1377,32 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.7)",
     fontSize: 16,
     textAlign: "center",
+  },
+  connectionStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  connectionText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  connectionIndicator: {
+    position: "absolute",
+    top: 20,
+    right: 80,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    zIndex: 100,
   },
   errorContainer: {
     flex: 1,
@@ -1612,9 +1664,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 3,
     borderColor: "rgba(255, 255, 255, 0.5)",
-    overflow: "hidden", // Add this to ensure the image respects the container's border radius
+    overflow: "hidden",
   },
-
   modernVsText: {
     fontSize: 36,
     fontWeight: "bold",
@@ -1630,7 +1681,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     zIndex: -1,
   },
-
   gameOverOverlay: {
     position: "absolute",
     top: 0,
@@ -1811,5 +1861,89 @@ const styles = StyleSheet.create({
   statusEffectText: {
     color: "#fff",
     fontSize: 12,
+  },
+  battleField: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    width: "100%",
+    paddingHorizontal: 20,
+  },
+  playerBeastContainer: {
+    alignItems: "center",
+  },
+  beastImage: {
+    width: 120,
+    height: 120,
+    resizeMode: "contain",
+  },
+  beastStatsContainer: {
+    alignItems: "center",
+    marginTop: 10,
+  },
+  healthBarContainer: {
+    width: 150,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    borderRadius: 5,
+    overflow: "hidden",
+    marginTop: 5,
+  },
+  healthBar: {
+    height: 10,
+    backgroundColor: "#10B981",
+    width: "100%",
+  },
+  energyBarContainer: {
+    width: 150,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    borderRadius: 5,
+    overflow: "hidden",
+    marginTop: 5,
+  },
+  energyBar: {
+    height: 10,
+    backgroundColor: "#F59E0B",
+    width: "100%",
+  },
+  healthText: {
+    color: "#fff",
+    fontSize: 12,
+    position: "absolute",
+    top: -15,
+  },
+  energyText: {
+    color: "#fff",
+    fontSize: 12,
+    position: "absolute",
+    top: -15,
+  },
+  abilitiesContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    width: "100%",
+    paddingHorizontal: 20,
+    marginTop: 20,
+  },
+  abilityButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 5,
+  },
+  abilityText: {
+    color: "#fff",
+    fontSize: 16,
+  },
+  battleLogContainer: {
+    position: "absolute",
+    bottom: 20,
+    left: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 5,
+  },
+  battleLogText: {
+    color: "#fff",
+    fontSize: 14,
   },
 })

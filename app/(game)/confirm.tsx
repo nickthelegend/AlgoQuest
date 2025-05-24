@@ -35,6 +35,7 @@ import * as SecureStore from "expo-secure-store"
 import { supabase } from "@/lib/supabase"
 import algosdk from "algosdk"
 import { createElement } from "react"
+import { __DEV__ } from "react-native"
 
 const { width: screenWidth } = Dimensions.get("window")
 
@@ -56,11 +57,32 @@ export default function ConfirmBattleScreen() {
   const [senderName, setSenderName] = useState<string>("Unknown Player")
   const [senderBeast, setSenderBeast] = useState<any>(null)
   const [isAccepting, setIsAccepting] = useState(false)
+  const [senderFullWallet, setSenderFullWallet] = useState<string>("")
 
   useEffect(() => {
     const initialize = async () => {
       setIsLoading(true)
       try {
+        // Decode the sender parameter if it's URL encoded
+        let decodedSender = null
+
+        if (sender) {
+          try {
+            decodedSender = decodeURIComponent(sender as string)
+          } catch (decodeError) {
+            console.error("Error decoding sender:", decodeError)
+            decodedSender = sender as string
+          }
+        }
+
+        console.log("=== CONFIRM SCREEN INITIALIZATION ===")
+        console.log("Raw sender param:", sender)
+        console.log("Sender type:", typeof sender)
+        console.log("Sender length:", sender ? (sender as string).length : 0)
+        console.log("Decoded sender:", decodedSender)
+        console.log("Decoded sender length:", decodedSender ? decodedSender.length : 0)
+        console.log("=====================================")
+
         // Load wallet address
         await loadWalletAddress()
 
@@ -68,8 +90,11 @@ export default function ConfirmBattleScreen() {
         await fetchUserBeasts()
 
         // Fetch sender info if we have a sender wallet address
-        if (sender) {
-          await fetchSenderInfo(sender as string)
+        if (decodedSender) {
+          await fetchSenderInfo(decodedSender)
+        } else {
+          console.error("No sender parameter found!")
+          Alert.alert("Error", "No sender information found. Please try again.")
         }
       } catch (error) {
         console.error("Error initializing confirm screen:", error)
@@ -107,6 +132,8 @@ export default function ConfirmBattleScreen() {
         return
       }
 
+      console.log("Fetching beasts for user ID:", userId)
+
       // Get beasts owned by user
       const { data: beastsData, error: beastsError } = await supabase
         .from("beasts")
@@ -134,19 +161,76 @@ export default function ConfirmBattleScreen() {
 
   const fetchSenderInfo = async (senderWalletAddress: string) => {
     try {
-      // Fetch sender's user info from database
-      const { data: userData, error: userError } = await supabase
+      console.log("Fetching sender info for wallet:", senderWalletAddress)
+      console.log("Wallet address length:", senderWalletAddress.length)
+      console.log("Wallet address type:", typeof senderWalletAddress)
+
+      if (!senderWalletAddress || senderWalletAddress.length < 5) {
+        console.error("Invalid wallet address provided:", senderWalletAddress)
+        setSenderName("Unknown Player")
+        return
+      }
+
+      // First, let's check if there are any users in the database
+      const { data: allUsers, error: allUsersError } = await supabase
         .from("users")
         .select("id, wallet_address")
-        .eq("wallet_address", senderWalletAddress)
-        .single()
+        .limit(5)
 
-      if (userError) {
+      console.log("Sample users in database:", allUsers)
+      console.log("All users query error:", allUsersError)
+
+      let userData = null
+      let userError = null
+
+      // If the wallet address is short (truncated), use partial matching
+      if (senderWalletAddress.length < 20) {
+        console.log("Using partial matching for short wallet address")
+
+        // Try to find wallet that starts with the provided characters
+        const { data: partialMatches, error: partialError } = await supabase
+          .from("users")
+          .select("id, wallet_address")
+          .ilike("wallet_address", `${senderWalletAddress}%`)
+
+        console.log("Partial match results:", partialMatches)
+        console.log("Partial match error:", partialError)
+
+        if (partialMatches && partialMatches.length > 0) {
+          userData = partialMatches[0] // Take the first match
+          console.log("Found partial match:", userData)
+          setSenderFullWallet(userData.wallet_address) // Store the full wallet address
+        } else {
+          userError = { message: "No partial matches found" }
+        }
+      } else {
+        // Full wallet address - use exact match
+        console.log("Using exact matching for full wallet address")
+        const result = await supabase
+          .from("users")
+          .select("id, wallet_address")
+          .eq("wallet_address", senderWalletAddress)
+          .single()
+
+        userData = result.data
+        userError = result.error
+
+        if (userData) {
+          setSenderFullWallet(userData.wallet_address)
+        }
+      }
+
+      console.log("Final user query result:", { userData, userError })
+
+      if (userError || !userData) {
         console.error("Error fetching sender info:", userError)
+        setSenderName("Unknown Player")
         return
       }
 
       if (userData) {
+        console.log("Found sender user data:", userData)
+
         // Truncate wallet address for display
         const truncatedAddress = userData.wallet_address
           ? `${userData.wallet_address.slice(0, 6)}...${userData.wallet_address.slice(-4)}`
@@ -165,6 +249,7 @@ export default function ConfirmBattleScreen() {
         if (beastError) {
           console.error("Error fetching sender beast:", beastError)
         } else if (beastData) {
+          console.log("Found sender beast:", beastData)
           setSenderBeast(beastData)
         }
       }
@@ -177,30 +262,170 @@ export default function ConfirmBattleScreen() {
     setSelectedBeast(beast)
   }
 
-  const handleAccept = () => {
+  const handleAccept = async () => {
     if (!selectedBeast) {
       Alert.alert("Select Beast", "Please select a beast for battle")
       return
     }
 
+    // Use the full wallet address if we found it, otherwise use the original
+    const fullSenderWallet = senderFullWallet || (sender ? decodeURIComponent(sender as string) : null)
+
+    if (!fullSenderWallet) {
+      console.error("No sender wallet address available")
+      Alert.alert("Error", "Missing sender information. Please try again.")
+      return
+    }
+
+    console.log("Starting battle acceptance process...")
+    console.log("Full sender wallet:", fullSenderWallet, "Selected Beast:", selectedBeast.id)
     setIsAccepting(true)
 
-    // Store selected beast ID in secure storage for battle arena
-    SecureStore.setItemAsync("selectedBeastId", selectedBeast.id.toString())
-      .then(() => {
-        // Navigate to battle arena
-        setTimeout(() => {
-          router.push({
-            pathname: "/battle-arena",
-            params: { beastId: selectedBeast.id.toString() },
-          })
-        }, 500)
-      })
-      .catch((error) => {
-        console.error("Error saving selected beast:", error)
-        Alert.alert("Error", "Failed to prepare for battle")
+    try {
+      // Store selected beast ID in secure storage for battle arena
+      await SecureStore.setItemAsync("selectedBeastId", selectedBeast.id.toString())
+
+      // Get current user ID to send notification
+      const userId = await SecureStore.getItemAsync("userId")
+
+      if (!userId) {
+        console.error("No user ID found")
+        Alert.alert("Error", "User ID not found. Please try logging in again.")
         setIsAccepting(false)
-      })
+        return
+      }
+
+      console.log("Current user ID:", userId, "Full sender wallet:", fullSenderWallet)
+
+      // Send notification to the battle creator that we're joining
+      if (fullSenderWallet && userId) {
+        try {
+          // First, get the sender's user ID from their wallet address
+          console.log("Looking up sender user ID for full wallet:", fullSenderWallet)
+
+          const { data: senderUserData, error: senderError } = await supabase
+            .from("users")
+            .select("id")
+            .eq("wallet_address", fullSenderWallet)
+            .single()
+
+          if (senderError || !senderUserData) {
+            console.error("Error fetching sender user ID:", senderError)
+            Alert.alert("Error", "Could not find the battle creator")
+            setIsAccepting(false)
+            return
+          }
+
+          console.log("Found sender user ID:", senderUserData.id)
+
+          // Now find the battle created by the sender (using their user ID)
+          console.log("Looking for battles created by sender user ID:", senderUserData.id)
+
+          const { data: battles, error: findError } = await supabase
+            .from("battles")
+            .select("*")
+            .eq("player1_id", senderUserData.id)
+            .eq("status", "waiting")
+            .order("created_at", { ascending: false })
+            .limit(1)
+
+          console.log("Battle search result:", { battles, findError })
+
+          if (findError) {
+            console.error("Error finding battle:", findError)
+            Alert.alert("Error", `Database error: ${findError.message}`)
+            setIsAccepting(false)
+            return
+          }
+
+          if (!battles || battles.length === 0) {
+            console.error("No waiting battles found for sender")
+            Alert.alert("Error", "No active battle found. The battle may have expired or been cancelled.")
+            setIsAccepting(false)
+            return
+          }
+
+          const battle = battles[0]
+          const battleId = battle.id
+
+          console.log("Found battle:", battleId, "updating with player2:", userId)
+
+          // Update the battle to add player 2 and set status to active
+          const { data: updatedBattle, error: updateError } = await supabase
+            .from("battles")
+            .update({
+              player2_id: userId,
+              player2_beast_id: selectedBeast.id.toString(),
+              status: "active",
+            })
+            .eq("id", battleId)
+            .select()
+            .single()
+
+          console.log("Battle update result:", { updatedBattle, updateError })
+
+          if (updateError) {
+            console.error("Error updating battle:", updateError)
+            Alert.alert("Error", `Failed to join the battle: ${updateError.message}`)
+            setIsAccepting(false)
+            return
+          }
+
+          console.log("Battle updated successfully, opponent joined")
+
+          // Send real-time notification via Supabase channel
+          try {
+            const channel = supabase.channel(`battle:${battleId}`)
+
+            // Send a broadcast message to notify the battle creator
+            const broadcastResult = await channel.send({
+              type: "broadcast",
+              event: "opponent_joined",
+              payload: {
+                message: `${truncateWalletAddress(walletAddress)} has joined the battle!`,
+                acceptingPlayerId: userId,
+                battleId: battleId,
+                timestamp: Date.now(),
+              },
+            })
+
+            console.log("Broadcast result:", broadcastResult)
+            console.log("Sent acceptance notification to battle creator")
+          } catch (broadcastError) {
+            console.error("Error sending broadcast:", broadcastError)
+            // Don't fail the whole process if broadcast fails
+          }
+
+          // Navigate to battle arena with opponent information
+          console.log("Navigating to battle arena...")
+
+          // Small delay to ensure database update is processed
+          setTimeout(() => {
+            setIsAccepting(false)
+            router.push({
+              pathname: "/battle-arena",
+              params: {
+                beastId: selectedBeast.id.toString(),
+                battleId: battleId,
+                opponentId: fullSenderWallet, // Pass the full sender's wallet address as opponent ID
+              },
+            })
+          }, 1000)
+        } catch (notificationError) {
+          console.error("Failed to process battle acceptance:", notificationError)
+          Alert.alert("Error", `Failed to join the battle: ${notificationError.message || "Unknown error"}`)
+          setIsAccepting(false)
+        }
+      } else {
+        console.error("Missing sender or userId")
+        Alert.alert("Error", "Missing required information to join battle")
+        setIsAccepting(false)
+      }
+    } catch (error) {
+      console.error("Error preparing for battle:", error)
+      Alert.alert("Error", `Failed to prepare for battle: ${error.message || "Unknown error"}`)
+      setIsAccepting(false)
+    }
   }
 
   const handleDecline = () => {
@@ -345,6 +570,17 @@ export default function ConfirmBattleScreen() {
             strongest beast and enter the arena!
           </Text>
 
+          {/* Debug Info */}
+          {__DEV__ && (
+            <View style={styles.debugInfo}>
+              <Text style={styles.debugText}>Debug: Sender param length: {sender ? (sender as string).length : 0}</Text>
+              <Text style={styles.debugText}>Debug: Full wallet found: {senderFullWallet ? "Yes" : "No"}</Text>
+              {senderFullWallet && (
+                <Text style={styles.debugText}>Debug: Full wallet: {senderFullWallet.slice(0, 10)}...</Text>
+              )}
+            </View>
+          )}
+
           {/* Challenger Beast Info */}
           {senderBeast && (
             <View style={styles.challengerBeast}>
@@ -406,7 +642,7 @@ export default function ConfirmBattleScreen() {
 
       {/* Action Buttons */}
       <Animated.View entering={SlideInUp.delay(400)} style={styles.actionButtons}>
-        <TouchableOpacity style={styles.declineButton} onPress={handleDecline}>
+        <TouchableOpacity style={styles.declineButton} onPress={handleDecline} disabled={isAccepting}>
           <X size={20} color="#ffffff" />
           <Text style={styles.declineButtonText}>Decline</Text>
         </TouchableOpacity>
@@ -417,7 +653,10 @@ export default function ConfirmBattleScreen() {
           disabled={!selectedBeast || isAccepting}
         >
           {isAccepting ? (
-            <ActivityIndicator size="small" color="#ffffff" />
+            <>
+              <ActivityIndicator size="small" color="#ffffff" />
+              <Text style={styles.acceptButtonText}>Joining Battle...</Text>
+            </>
           ) : (
             <>
               <Swords size={20} color="#ffffff" />
@@ -428,6 +667,12 @@ export default function ConfirmBattleScreen() {
       </Animated.View>
     </SafeAreaView>
   )
+}
+
+// Add helper function to truncate wallet address
+const truncateWalletAddress = (address: string) => {
+  if (!address) return "Unknown"
+  return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
 const styles = StyleSheet.create({
@@ -497,6 +742,17 @@ const styles = StyleSheet.create({
   highlightText: {
     color: "#7C3AED",
     fontWeight: "bold",
+  },
+  debugInfo: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  debugText: {
+    color: "#4ADE80",
+    fontSize: 12,
+    fontFamily: "monospace",
   },
   beastItem: {
     flexDirection: "row",

@@ -223,10 +223,24 @@ export default function FindPlayersScreen() {
     // Listen for battle invitations
     const onInvitationListener = NearbyConnections.onInvitationReceived((data) => {
       console.log("Battle invitation received from:", data.name)
+      console.log("Full invitation data:", data)
+      console.log("Payload received:", data.payload)
+      console.log("Data keys:", Object.keys(data))
       setDebugInfo((prev) => prev + `\nInvitation received: ${JSON.stringify(data)}`)
 
-      // Extract the sender wallet address from the payload (deep link)
-      const senderWalletAddress = data.payload || ""
+      // Extract the sender wallet address from the payload - try multiple sources
+      let senderWalletAddress = ""
+
+      if (data.payload) {
+        senderWalletAddress = data.payload
+      } else if (data.name && data.name.length > 10) {
+        // If name looks like a wallet address, use it
+        senderWalletAddress = data.name
+      } else {
+        console.warn("No wallet address found in invitation data")
+      }
+
+      console.log("Final extracted sender wallet address:", senderWalletAddress)
 
       // Schedule a local notification to alert the user with deep link
       Notifications.scheduleNotificationAsync({
@@ -234,7 +248,7 @@ export default function FindPlayersScreen() {
           title: "Battle Challenge",
           body: `${data.name} wants to battle with you!`,
           data: {
-            url: `exp://exp.host/@username/app/--/game/confirm?sender=${senderWalletAddress}`,
+            url: `exp+algoquest:///(game)/confirm?sender=${encodeURIComponent(senderWalletAddress)}`,
           },
         },
         trigger: null, // sends the notification immediately
@@ -253,6 +267,7 @@ export default function FindPlayersScreen() {
           {
             text: "Accept",
             onPress: () => {
+              console.log("Navigating to confirm with sender:", senderWalletAddress)
               // Navigate to confirm screen with sender wallet address
               router.push({
                 pathname: "/(game)/confirm",
@@ -288,14 +303,55 @@ export default function FindPlayersScreen() {
       setConnectedPeerId(null)
     })
 
+    // Listen for text messages (used for battle notifications)
+    const onTextReceivedListener = NearbyConnections.onTextReceived((data) => {
+      console.log("Text message received:", data)
+      setDebugInfo((prev) => prev + `\nText received: ${JSON.stringify(data)}`)
+
+      try {
+        // Try to parse the message as JSON for battle notifications
+        const message = JSON.parse(data.text)
+
+        if (message.type === "opponent_accepting" && message.acceptingPlayerId !== userId) {
+          console.log("Opponent is accepting battle!")
+
+          // Show notification that opponent is joining
+          Alert.alert(
+            "Opponent Joining!",
+            message.message || "Your opponent is joining the battle!",
+            [
+              {
+                text: "Get Ready!",
+                onPress: () => {
+                  // Navigate to battle arena immediately
+                  router.push({
+                    pathname: "/battle-arena",
+                    params: {
+                      beastId: selectedBeast?.id.toString(),
+                      battleId: message.battleId,
+                    },
+                  })
+                },
+              },
+            ],
+            { cancelable: false },
+          )
+        }
+      } catch (error) {
+        // If it's not JSON, treat as regular text message
+        console.log("Regular text message:", data.text)
+      }
+    })
+
     return () => {
       onPeerFoundListener()
       onPeerLostListener()
       onInvitationListener()
       onConnectedListener()
       onDisconnectedListener()
+      onTextReceivedListener()
     }
-  }, [permissionsGranted])
+  }, [permissionsGranted, userId, selectedBeast])
 
   // Modify the loadUserData function to directly fetch the user ID using wallet address
   const loadUserData = async () => {
@@ -597,6 +653,17 @@ export default function FindPlayersScreen() {
     }
   }
 
+  // Helper function to send battle notification via NearbyConnections
+  const sendBattleNotification = (peerId: string, message: any) => {
+    try {
+      const messageText = JSON.stringify(message)
+      NearbyConnections.sendText(peerId, messageText)
+      console.log("Battle notification sent via NearbyConnections:", message)
+    } catch (error) {
+      console.error("Error sending battle notification via NearbyConnections:", error)
+    }
+  }
+
   const handleChallenge = (player: Player) => {
     Alert.alert("Challenge Player", `Do you want to challenge ${player.name}?`, [
       {
@@ -613,7 +680,7 @@ export default function FindPlayersScreen() {
               setDebugInfo((prev) => prev + `\nSelf-testing notification...`)
 
               // Create a deep link URL with the wallet address
-              const deepLinkUrl = `exp+algoquest:///(game)/confirm?=${walletAddress}`
+              const deepLinkUrl = `exp+algoquest:///(game)/confirm?sender=${walletAddress}`
 
               // Directly trigger a notification for testing
               await Notifications.scheduleNotificationAsync({
@@ -658,14 +725,123 @@ export default function FindPlayersScreen() {
               throw new Error("Invalid player ID")
             }
 
-            // Create a deep link URL with the wallet address
-            const deepLinkUrl = `exp+algoquest:///(game)/confirm?=${walletAddress}`
+            // Create a battle room first and get the battle ID
+            if (!selectedBeast) {
+              Alert.alert("Error", "Please select a beast before challenging a player")
+              return
+            }
 
-            // Send battle invitation to the player with the deep link URL
-            await NearbyConnections.requestConnection(player.id, deepLinkUrl)
+            // Create battle in database
+            const battleData = {
+              player1_id: userId,
+              player1_beast_id: selectedBeast.id.toString(),
+              status: "waiting",
+              current_turn: "player1",
+              turn_number: 1,
+              turn_time_remaining: 30,
+              battle_data: {
+                moves: [],
+              },
+            }
+
+            const { data: battle, error: battleError } = await supabase
+              .from("battles")
+              .insert(battleData)
+              .select()
+              .single()
+
+            if (battleError) {
+              console.error("Error creating battle:", battleError)
+              Alert.alert("Error", "Failed to create battle room")
+              return
+            }
+
+            console.log("Battle created:", battle.id)
+            setDebugInfo((prev) => prev + `\nBattle created: ${battle.id}`)
+
+            // Set up real-time listener for this specific battle
+            const battleChannel = supabase.channel(`battle:${battle.id}`)
+
+            battleChannel
+              .on(
+                "postgres_changes",
+                {
+                  event: "UPDATE",
+                  schema: "public",
+                  table: "battles",
+                  filter: `id=eq.${battle.id}`,
+                },
+                (payload) => {
+                  console.log("Battle update received:", payload.new)
+                  const updatedBattle = payload.new as any
+
+                  if (updatedBattle.status === "active" && updatedBattle.player2_id) {
+                    console.log("Opponent joined! Redirecting to battle arena...")
+
+                    // Unsubscribe from this channel
+                    battleChannel.unsubscribe()
+
+                    // Show notification and redirect
+                    Alert.alert(
+                      "Opponent Joined!",
+                      "Your opponent has joined the battle. Get ready to fight!",
+                      [
+                        {
+                          text: "Let's Battle!",
+                          onPress: () => {
+                            router.push({
+                              pathname: "/battle-arena",
+                              params: {
+                                beastId: selectedBeast.id.toString(),
+                                battleId: battle.id,
+                              },
+                            })
+                          },
+                        },
+                      ],
+                      { cancelable: false },
+                    )
+                  }
+                },
+              )
+              .subscribe()
+
+            // Create a deep link URL with the battle ID
+            const deepLinkUrl = `exp://exp.host/@username/app/--/game/confirm?sender=${walletAddress}&battleId=${battle.id}`
+
+            // Send battle invitation to the player with the wallet address as payload
+            console.log("Sending invitation with wallet address payload:", walletAddress)
+            await NearbyConnections.requestConnection(player.id, walletAddress)
 
             // Show a toast or alert that the challenge was sent
-            Alert.alert("Challenge Sent", `Challenge sent to ${player.name}. Waiting for response...`)
+            Alert.alert("Challenge Sent", `Challenge sent to ${player.name}. Redirecting to battle lobby...`, [
+              {
+                text: "OK",
+                onPress: () => {
+                  // Redirect to battle lobby
+                  router.push({
+                    pathname: "/(game)/battle-lobby",
+                    params: {
+                      battleId: battle.id.toString(), // Make sure this is a string
+                      opponentName: player.name,
+                      beastId: selectedBeast.id.toString(),
+                    },
+                  })
+                },
+              },
+            ])
+
+            // Auto redirect after 2 seconds if user doesn't press OK
+            setTimeout(() => {
+              router.push({
+                pathname: "/(game)/battle-lobby",
+                params: {
+                  battleId: battle.id.toString(), // Make sure this is a string
+                  opponentName: player.name,
+                  beastId: selectedBeast.id.toString(),
+                },
+              })
+            }, 2000)
           } catch (error) {
             console.error("Error sending challenge:", error)
             setDebugInfo((prev) => prev + `\nError sending challenge: ${error}`)
