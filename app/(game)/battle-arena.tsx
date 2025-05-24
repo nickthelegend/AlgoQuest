@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Vibration, StatusBar, Alert } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Vibration, StatusBar } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
@@ -391,6 +391,71 @@ export default function BattleArenaScreen() {
     },
   ]
 
+  // Add elemental effectiveness chart after the defaultMoves definition
+  const elementalChart: Record<string, Record<string, number>> = {
+    fire: { water: 0.5, earth: 2.0, wind: 1.5, light: 1.0, dark: 1.0, fire: 0.5 },
+    water: { fire: 2.0, earth: 0.5, wind: 1.0, light: 1.0, dark: 1.0, water: 0.5 },
+    earth: { fire: 0.5, water: 2.0, wind: 0.5, light: 1.0, dark: 1.0, earth: 0.5 },
+    wind: { fire: 0.5, water: 1.0, earth: 2.0, light: 1.0, dark: 1.0, wind: 0.5 },
+    light: { dark: 2.0, fire: 1.0, water: 1.0, earth: 1.0, wind: 1.0, light: 0.5 },
+    dark: { light: 2.0, fire: 1.0, water: 1.0, earth: 1.0, wind: 1.0, dark: 0.5 },
+  }
+
+  // Add status effect processing function
+  const processStatusEffects = (beast: Beast, setBeast: (beast: Beast) => void, healthValue: any) => {
+    if (!beast.status) return beast
+
+    let newHealth = beast.health
+    let statusMessage = ""
+
+    switch (beast.status.type) {
+      case "burn":
+        const burnDamage = Math.floor(beast.maxHealth * 0.06) // Reduced from 8% to 6% since health is lower
+        newHealth = Math.max(0, beast.health - burnDamage)
+        statusMessage = `${beast.name} takes ${burnDamage} burn damage!`
+        break
+      case "poison":
+        const poisonDamage = Math.floor(beast.maxHealth * 0.04) // Reduced from 6% to 4%
+        newHealth = Math.max(0, beast.health - poisonDamage)
+        statusMessage = `${beast.name} takes ${poisonDamage} poison damage!`
+        break
+      case "freeze":
+        statusMessage = `${beast.name} is frozen and cannot attack!`
+        break
+    }
+
+    // Update health bar
+    if (newHealth !== beast.health) {
+      healthValue.value = withSpring((newHealth / beast.maxHealth) * 100)
+    }
+
+    // Reduce status duration
+    const newStatus = beast.status.duration > 1 ? { ...beast.status, duration: beast.status.duration - 1 } : undefined
+
+    const updatedBeast = {
+      ...beast,
+      health: newHealth,
+      status: newStatus,
+    }
+
+    setBeast(updatedBeast)
+
+    // Add status message to battle log
+    if (statusMessage) {
+      setBattleLogs((prev) => [
+        {
+          id: Date.now().toString() + "_status",
+          message: statusMessage,
+          type: "status" as const,
+          timestamp: Date.now(),
+        },
+        ...prev.slice(0, 4),
+      ])
+    }
+
+    return updatedBeast
+  }
+
   useEffect(() => {
     // Hide status bar for immersive experience
     StatusBar.setHidden(true)
@@ -483,8 +548,8 @@ export default function BattleArenaScreen() {
         // Add health, energy, and stats properties to the beast
         const playerBeast = {
           ...playerBeastData,
-          health: (playerBeastData.power || 100) * 10, // Changed from * 100 to * 10 for more reasonable health values
-          maxHealth: (playerBeastData.power || 100) * 10,
+          health: (playerBeastData.power || 100) * 2, // Changed from * 10 to * 2 for 200 HP max
+          maxHealth: (playerBeastData.power || 100) * 2,
           energy: 100,
           maxEnergy: 100,
           level: Math.floor((playerBeastData.power || 100) / 100) + 1,
@@ -521,8 +586,8 @@ export default function BattleArenaScreen() {
         // Add health, energy, and stats properties to the opponent beast
         const opponentBeast = {
           ...randomOpponent,
-          health: (randomOpponent.power || 100) * 10, // Changed from * 100 to * 10
-          maxHealth: (randomOpponent.power || 100) * 10,
+          health: (randomOpponent.power || 100) * 2, // Changed from * 10 to * 2
+          maxHealth: (randomOpponent.power || 100) * 2,
           energy: 100,
           maxEnergy: 100,
           level: Math.floor((randomOpponent.power || 100) / 100) + 1,
@@ -576,171 +641,297 @@ export default function BattleArenaScreen() {
     handleAttack(randomMove, "player2")
   }
 
-  // Handle player attack
+  // Replace the handleAttack function completely
   const handleAttack = (move: Move, attacker: "player1" | "player2" = "player1") => {
     if (gameOver) return
 
+    const attackerBeast = attacker === "player1" ? player1Beast : player2Beast
+    const defenderBeast = attacker === "player1" ? player2Beast : player1Beast
+
+    if (!attackerBeast || !defenderBeast) return
+
+    // Check if attacker is frozen
+    if (attackerBeast.status?.type === "freeze") {
+      setBattleLogs((prev) => [
+        {
+          id: Date.now().toString(),
+          message: `${attackerBeast.name} is frozen and cannot attack!`,
+          type: "status",
+          timestamp: Date.now(),
+        },
+        ...prev.slice(0, 4),
+      ])
+
+      // Skip turn but still regenerate energy and process status effects
+      setTimeout(() => {
+        regenerateEnergy(attacker)
+        processEndOfTurn(attacker)
+      }, 1000)
+      return
+    }
+
     Vibration.vibrate(50)
     setSelectedMove(move)
-    setShowBattleLog(true) // Show battle log after attack
 
-    // Hide battle log after 3 seconds
-    setTimeout(() => {
-      setShowBattleLog(false)
-    }, 3000)
+    // Calculate hit chance
+    const hitRoll = Math.random() * 100
+    const missChance = 100 - move.accuracy
 
-    // Animate attack sequence
-    shakeValue.value = withSequence(
-      withTiming(10, { duration: 100 }),
-      withTiming(-10, { duration: 100 }),
-      withTiming(0, { duration: 100 }),
-    )
+    if (hitRoll < missChance) {
+      // Attack missed - add shake animation for the attacker
+      shakeValue.value = withSequence(
+        withTiming(5, { duration: 100 }),
+        withTiming(-5, { duration: 100 }),
+        withTiming(0, { duration: 100 }),
+      )
 
-    // Flash effect
-    flashValue.value = withSequence(withTiming(1, { duration: 100 }), withTiming(0, { duration: 100 }))
+      setBattleLogs((prev) => [
+        {
+          id: Date.now().toString(),
+          message: `${attackerBeast.name}'s ${move.name} missed!`,
+          type: "system",
+          timestamp: Date.now(),
+        },
+        ...prev.slice(0, 4),
+      ])
 
-    // Battle field shake effect
+      setShowBattleLog(true)
+      setTimeout(() => setShowBattleLog(false), 2000)
+
+      // Still consume energy and end turn
+      setTimeout(() => {
+        regenerateEnergy(attacker)
+        processEndOfTurn(attacker)
+      }, 1000)
+      return
+    }
+
+    // Calculate critical hit chance (base 10%, +5% for every 25% health lost)
+    const healthPercentage = attackerBeast.health / attackerBeast.maxHealth
+    const baseCritChance = 10
+    const lowHealthBonus = (1 - healthPercentage) * 20 // Up to 20% bonus when near death
+    const critChance = baseCritChance + lowHealthBonus
+    const critRoll = Math.random() * 100
+    const isCritical = critRoll < critChance
+
+    // Enhanced damage calculation
+    let damage = 0
+    let effectiveness = 1.0
+
+    if (move.type === "status") {
+      // Status moves don't deal damage but apply effects
+      applyStatusEffect(move, defenderBeast, attacker)
+    } else {
+      // Get elemental effectiveness
+      const attackerElement = attackerBeast.element?.toLowerCase() || "neutral"
+      const defenderElement = defenderBeast.element?.toLowerCase() || "neutral"
+
+      if (elementalChart[attackerElement] && elementalChart[attackerElement][defenderElement]) {
+        effectiveness = elementalChart[attackerElement][defenderElement]
+      }
+
+      // Base damage calculation
+      const attackStat = move.type === "physical" ? attackerBeast.stats.attack : attackerBeast.stats.magic
+      const defenseStat = move.type === "physical" ? defenderBeast.stats.defense : defenderBeast.stats.magic
+
+      damage = move.power * (attackStat / defenseStat) * 0.4 * effectiveness
+
+      // Add larger damage variance (±25%)
+      damage = damage * (0.75 + Math.random() * 0.5)
+
+      // Apply critical hit
+      if (isCritical) {
+        damage *= 2
+        // Critical hits restore some energy
+        const energyRestore = Math.min(15, attackerBeast.maxEnergy - attackerBeast.energy)
+        if (attacker === "player1") {
+          setPlayer1Beast((prev) => ({ ...prev, energy: prev.energy + energyRestore }))
+        } else {
+          setPlayer2Beast((prev) => ({ ...prev, energy: prev.energy + energyRestore }))
+        }
+      }
+
+      // Round damage
+      damage = Math.round(damage)
+    }
+
+    // Enhanced animations
+    if (isCritical) {
+      // Critical hit animation
+      shakeValue.value = withSequence(
+        withTiming(15, { duration: 80 }),
+        withTiming(-15, { duration: 80 }),
+        withTiming(10, { duration: 80 }),
+        withTiming(-10, { duration: 80 }),
+        withTiming(0, { duration: 80 }),
+      )
+      flashValue.value = withSequence(
+        withTiming(1, { duration: 150 }),
+        withTiming(0, { duration: 150 }),
+        withTiming(1, { duration: 150 }),
+        withTiming(0, { duration: 150 }),
+      )
+    } else {
+      // Normal hit animation
+      shakeValue.value = withSequence(
+        withTiming(10, { duration: 100 }),
+        withTiming(-10, { duration: 100 }),
+        withTiming(0, { duration: 100 }),
+      )
+      flashValue.value = withSequence(withTiming(1, { duration: 100 }), withTiming(0, { duration: 100 }))
+    }
+
     battleFieldScale.value = withSequence(
       withTiming(1.02, { duration: 100 }),
       withTiming(0.98, { duration: 100 }),
       withTiming(1, { duration: 100 }),
     )
 
-    // Calculate damage (simplified)
-    const attackerBeast = attacker === "player1" ? player1Beast : player2Beast
-    const defenderBeast = attacker === "player1" ? player2Beast : player1Beast
+    // Apply damage and update health
+    if (damage > 0) {
+      if (attacker === "player1") {
+        const newHealth = Math.max(0, defenderBeast.health - damage)
+        player2Health.value = withSpring((newHealth / defenderBeast.maxHealth) * 100)
+        setPlayer2Beast((prev) => ({ ...prev, health: newHealth }))
 
-    if (!attackerBeast || !defenderBeast) return
+        if (newHealth <= 0) {
+          handleGameOver("player1")
+          return
+        }
+      } else {
+        const newHealth = Math.max(0, defenderBeast.health - damage)
+        player1Health.value = withSpring((newHealth / defenderBeast.maxHealth) * 100)
+        setPlayer1Beast((prev) => ({ ...prev, health: newHealth }))
 
-    // Base damage calculation with proper stats
-    let damage = move.power * (attackerBeast.stats.attack / defenderBeast.stats.defense) * 0.5
+        if (newHealth <= 0) {
+          handleGameOver("player2")
+          return
+        }
+      }
+    }
 
-    // Add some randomness (±10%)
-    damage = damage * (0.9 + Math.random() * 0.2)
-
-    // Round to nearest integer
-    damage = Math.round(damage)
-
-    // Update health and energy
+    // Update energy
     if (attacker === "player1") {
-      // Player 1 attacks Player 2
-      const newHealth = Math.max(0, defenderBeast.health - damage)
-      player2Health.value = withSpring((newHealth / defenderBeast.maxHealth) * 100)
-      player1Energy.value = withSpring(
-        Math.max(0, ((attackerBeast.energy - move.energyCost) / attackerBeast.maxEnergy) * 100),
-      )
-
-      // Update beast objects
-      setPlayer2Beast({
-        ...defenderBeast,
-        health: newHealth,
-      })
-
-      setPlayer1Beast({
-        ...attackerBeast,
-        energy: Math.max(0, attackerBeast.energy - move.energyCost),
-      })
-
-      // Check if opponent is defeated
-      if (newHealth <= 0) {
-        handleGameOver("player1")
-      }
+      const newEnergy = Math.max(0, attackerBeast.energy - move.energyCost)
+      player1Energy.value = withSpring((newEnergy / attackerBeast.maxEnergy) * 100)
+      setPlayer1Beast((prev) => ({ ...prev, energy: newEnergy }))
     } else {
-      // Player 2 attacks Player 1
-      const newHealth = Math.max(0, defenderBeast.health - damage)
-      player1Health.value = withSpring((newHealth / defenderBeast.maxHealth) * 100)
-      player2Energy.value = withSpring(
-        Math.max(0, ((attackerBeast.energy - move.energyCost) / attackerBeast.maxEnergy) * 100),
-      )
-
-      // Update beast objects
-      setPlayer1Beast({
-        ...defenderBeast,
-        health: newHealth,
-      })
-
-      setPlayer2Beast({
-        ...attackerBeast,
-        energy: Math.max(0, attackerBeast.energy - move.energyCost),
-      })
-
-      // Check if player is defeated
-      if (newHealth <= 0) {
-        handleGameOver("player2")
-      }
+      const newEnergy = Math.max(0, attackerBeast.energy - move.energyCost)
+      player2Energy.value = withSpring((newEnergy / attackerBeast.maxEnergy) * 100)
+      setPlayer2Beast((prev) => ({ ...prev, energy: newEnergy }))
     }
 
-    // Add to battle log
+    // Create battle log message
+    let logMessage = ""
+    if (move.type === "status") {
+      logMessage = `${attackerBeast.name} used ${move.name}!`
+    } else {
+      logMessage = `${attackerBeast.name} used ${move.name}!`
+      if (isCritical) logMessage += " Critical hit!"
+      if (damage > 0) logMessage += ` Dealt ${damage} damage!`
+      if (effectiveness > 1) logMessage += " It's super effective!"
+      if (effectiveness < 1) logMessage += " It's not very effective..."
+    }
+
     setBattleLogs((prev) => [
       {
         id: Date.now().toString(),
-        message: `${attacker === "player1" ? player1Name : player2Name} used ${move.name}! Dealt ${damage} damage!`,
-        type: "attack",
-        timestamp: Date.now(),
-      },
-      ...prev.slice(0, 4), // Keep only last 5 messages
-    ])
-
-    // If game is not over, switch turns
-    if (!gameOver) {
-      setCurrentTurn(attacker === "player1" ? "player2" : "player1")
-      setTurnTime(30)
-    }
-  }
-
-  const handleGameOver = (winningPlayer: "player1" | "player2") => {
-    setGameOver(true)
-    setWinner(winningPlayer)
-
-    // Add to battle log
-    setBattleLogs((prev) => [
-      {
-        id: Date.now().toString(),
-        message: `${winningPlayer === "player1" ? player1Name : player2Name} is victorious!`,
-        type: "system",
+        message: logMessage,
+        type: isCritical ? "system" : "attack",
         timestamp: Date.now(),
       },
       ...prev.slice(0, 4),
     ])
 
-    // Show battle log with results
     setShowBattleLog(true)
+    setTimeout(() => setShowBattleLog(false), 3000)
 
-    // Record battle result in database
-    recordBattleResult(winningPlayer).catch(console.error)
+    // Process end of turn after a delay
+    setTimeout(() => {
+      regenerateEnergy(attacker)
+      processEndOfTurn(attacker)
+    }, 1500)
   }
 
-  const recordBattleResult = async (winningPlayer: "player1" | "player2") => {
-    try {
-      const userId = await SecureStore.getItemAsync("userId")
-      if (!userId || !player1Beast || !player2Beast) return
+  // Add new helper functions
+  const regenerateEnergy = (attacker: "player1" | "player2") => {
+    // Random energy regeneration (3-8 points)
+    const energyGain = 3 + Math.floor(Math.random() * 6)
 
-      // Record battle in database
-      await supabase.from("battles").insert({
-        user_id: userId,
-        user_beast_id: player1Beast.id,
-        opponent_beast_id: player2Beast.id,
-        result: winningPlayer === "player1" ? "win" : "loss",
-        battle_date: new Date().toISOString(),
+    if (attacker === "player1") {
+      setPlayer1Beast((prev) => {
+        const newEnergy = Math.min(prev.maxEnergy, prev.energy + energyGain)
+        player1Energy.value = withSpring((newEnergy / prev.maxEnergy) * 100)
+        return { ...prev, energy: newEnergy }
       })
-    } catch (error) {
-      console.error("Failed to record battle result:", error)
-      // Don't show error to user, this is a background operation
+    } else {
+      setPlayer2Beast((prev) => {
+        const newEnergy = Math.min(prev.maxEnergy, prev.energy + energyGain)
+        player2Energy.value = withSpring((newEnergy / prev.maxEnergy) * 100)
+        return { ...prev, energy: newEnergy }
+      })
+    }
+
+    setBattleLogs((prev) => [
+      {
+        id: Date.now().toString() + "_energy",
+        message: `${attacker === "player1" ? player1Name : player2Name} regenerated ${energyGain} energy!`,
+        type: "system",
+        timestamp: Date.now(),
+      },
+      ...prev.slice(0, 4),
+    ])
+  }
+
+  const applyStatusEffect = (move: Move, target: Beast, attacker: "player1" | "player2") => {
+    let statusType: "burn" | "freeze" | "poison" | undefined
+    let duration = 3
+
+    // Determine status effect based on move
+    if (move.element === "fire") {
+      statusType = "burn"
+    } else if (move.element === "water") {
+      statusType = "freeze"
+      duration = 2 // Freeze is shorter but more impactful
+    } else if (move.element === "dark") {
+      statusType = "poison"
+    }
+
+    if (statusType) {
+      const newStatus = { type: statusType, duration }
+
+      if (attacker === "player1") {
+        setPlayer2Beast((prev) => ({ ...prev, status: newStatus }))
+      } else {
+        setPlayer1Beast((prev) => ({ ...prev, status: newStatus }))
+      }
+
+      setBattleLogs((prev) => [
+        {
+          id: Date.now().toString() + "_status_apply",
+          message: `${target.name} is now ${statusType}ed!`,
+          type: "status",
+          timestamp: Date.now(),
+        },
+        ...prev.slice(0, 4),
+      ])
     }
   }
 
-  const handleExitBattle = () => {
-    Alert.alert("Leave Battle", "Are you sure you want to leave the battle?", [
-      {
-        text: "Cancel",
-        style: "cancel",
-      },
-      {
-        text: "Leave",
-        style: "destructive",
-        onPress: () => router.back(),
-      },
-    ])
+  const processEndOfTurn = (attacker: "player1" | "player2") => {
+    // Process status effects for both beasts
+    if (player1Beast) {
+      processStatusEffects(player1Beast, setPlayer1Beast, player1Health)
+    }
+    if (player2Beast) {
+      processStatusEffects(player2Beast, setPlayer2Beast, player2Health)
+    }
+
+    // Switch turns if game is not over
+    if (!gameOver) {
+      setCurrentTurn(attacker === "player1" ? "player2" : "player1")
+      setTurnTime(30)
+    }
   }
 
   // Animation styles
@@ -872,6 +1063,15 @@ export default function BattleArenaScreen() {
   // Get player moves based on beast element
   const playerMoves = defaultMoves[player1Beast.element?.toLowerCase() || "default"] || defaultMoves.default
 
+  const handleGameOver = (winner: "player1" | "player2") => {
+    setGameOver(true)
+    setWinner(winner)
+  }
+
+  const handleExitBattle = () => {
+    router.back()
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Enhanced Background */}
@@ -951,6 +1151,13 @@ export default function BattleArenaScreen() {
                   <Text style={styles.modernStatText}>{Math.round(player2Beast.energy)}</Text>
                 </View>
               </View>
+              {(player1Beast.status || player2Beast.status) && (
+                <View style={styles.statusEffectContainer}>
+                  <Text style={styles.statusEffectText}>
+                    {player2Beast.status?.type}: {player2Beast.status?.duration} turns
+                  </Text>
+                </View>
+              )}
             </View>
           </BlurView>
         </Animated.View>
@@ -993,12 +1200,8 @@ export default function BattleArenaScreen() {
           {/* Enhanced Enemy Beast */}
           <Animated.View
             ref={player2BeastRef}
-            entering={SlideInRight.delay(400)}
-            style={[
-              styles.modernBeastContainer,
-              styles.enemyBeastContainer,
-              currentTurn === "player1" && shakeAnimation,
-            ]}
+            entering={SlideInLeft.delay(400)}
+            style={[styles.modernBeastContainer, styles.enemyBeastContainer]}
           >
             <LinearGradient
               colors={[`${getElementColor(player2Beast.element)}60`, "transparent"]}
@@ -1020,12 +1223,8 @@ export default function BattleArenaScreen() {
           {/* Enhanced Player Beast */}
           <Animated.View
             ref={player1BeastRef}
-            entering={SlideInLeft.delay(400)}
-            style={[
-              styles.modernBeastContainer,
-              styles.playerBeastContainer,
-              currentTurn === "player2" && shakeAnimation,
-            ]}
+            entering={SlideInRight.delay(400)}
+            style={[styles.modernBeastContainer, styles.playerBeastContainer]}
           >
             <LinearGradient
               colors={[`${getElementColor(player1Beast.element)}60`, "transparent"]}
@@ -1136,6 +1335,13 @@ export default function BattleArenaScreen() {
                   <Text style={styles.modernStatText}>{Math.round(player1Beast.energy)}</Text>
                 </View>
               </View>
+              {(player1Beast.status || player2Beast.status) && (
+                <View style={styles.statusEffectContainer}>
+                  <Text style={styles.statusEffectText}>
+                    {player1Beast.status?.type}: {player1Beast.status?.duration} turns
+                  </Text>
+                </View>
+              )}
             </View>
           </BlurView>
         </Animated.View>
@@ -1505,10 +1711,11 @@ const styles = StyleSheet.create({
     transform: [{ scaleY: 0.3 }],
   },
   enemyBeastContainer: {
-    transform: [{ scaleX: -1 }],
+    // Removed transform to keep enemy beast facing normal direction
   },
   playerBeastContainer: {
     marginTop: 20,
+    transform: [{ scaleX: -1 }],
   },
   modernVsBadge: {
     position: "absolute",
@@ -1700,5 +1907,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.3)",
+  },
+  statusEffectContainer: {
+    backgroundColor: "rgba(239, 68, 68, 0.3)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  statusEffectText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  logcritical: {
+    color: "#FFD700",
+    fontWeight: "bold",
   },
 })
