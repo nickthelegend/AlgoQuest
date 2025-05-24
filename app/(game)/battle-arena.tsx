@@ -20,7 +20,6 @@ import Animated, {
   BounceIn,
 } from "react-native-reanimated"
 import {
-  Shield,
   Swords,
   Crown,
   Flame,
@@ -45,16 +44,17 @@ import { supabase } from "@/lib/supabase"
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window")
 
-interface Move {
+interface BeastAbility {
   id: string
   name: string
-  type: "physical" | "magical" | "status"
+  type: "attack" | "heal" | "buff" | "debuff"
   element: "fire" | "water" | "earth" | "wind" | "light" | "dark"
   power: number
   accuracy: number
-  energyCost: number
+  energy_cost: number
+  cooldown: number
   description: string
-  icon: any // Lucide icon component
+  metadata?: any
 }
 
 interface Beast {
@@ -74,6 +74,7 @@ interface Beast {
     speed: number
     magic: number
   }
+  abilities: BeastAbility[]
   status?: {
     type: "burn" | "freeze" | "stun" | "poison"
     duration: number
@@ -124,7 +125,7 @@ export default function BattleArenaScreen() {
   const [currentTurn, setCurrentTurn] = useState<"player1" | "player2">("player1")
   const [turnTime, setTurnTime] = useState(30)
   const [battleStarted, setBattleStarted] = useState(false)
-  const [selectedMove, setSelectedMove] = useState<Move | null>(null)
+  const [selectedMove, setSelectedMove] = useState<BeastAbility | null>(null)
   const [battleLogs, setBattleLogs] = useState<BattleLog[]>([])
   const [showBattleLog, setShowBattleLog] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -151,247 +152,7 @@ export default function BattleArenaScreen() {
   const player1BeastRef = useRef(null)
   const player2BeastRef = useRef(null)
 
-  // Default moves for each element
-  const defaultMoves: Record<string, Move[]> = {
-    fire: [
-      {
-        id: "fire1",
-        name: "Flame Strike",
-        type: "physical",
-        element: "fire",
-        power: 80,
-        accuracy: 95,
-        energyCost: 25,
-        description: "A powerful strike imbued with fire",
-        icon: Flame,
-      },
-      {
-        id: "fire2",
-        name: "Inferno",
-        type: "magical",
-        element: "fire",
-        power: 100,
-        accuracy: 85,
-        energyCost: 40,
-        description: "Summons a raging inferno to engulf the opponent",
-        icon: Flame,
-      },
-      {
-        id: "fire3",
-        name: "Fire Shield",
-        type: "status",
-        element: "fire",
-        power: 0,
-        accuracy: 100,
-        energyCost: 20,
-        description: "Creates a protective fire barrier",
-        icon: Shield,
-      },
-      {
-        id: "fire4",
-        name: "Meteor",
-        type: "magical",
-        element: "fire",
-        power: 120,
-        accuracy: 80,
-        energyCost: 50,
-        description: "Summons a devastating meteor",
-        icon: Star,
-      },
-    ],
-    water: [
-      {
-        id: "water1",
-        name: "Tidal Wave",
-        type: "magical",
-        element: "water",
-        power: 85,
-        accuracy: 90,
-        energyCost: 30,
-        description: "Summons a powerful wave to crash into the opponent",
-        icon: Cloud,
-      },
-      {
-        id: "water2",
-        name: "Ice Shard",
-        type: "physical",
-        element: "water",
-        power: 70,
-        accuracy: 100,
-        energyCost: 20,
-        description: "Launches sharp ice shards at the opponent",
-        icon: Cloud,
-      },
-    ],
-    earth: [
-      {
-        id: "earth1",
-        name: "Stone Edge",
-        type: "physical",
-        element: "earth",
-        power: 90,
-        accuracy: 85,
-        energyCost: 30,
-        description: "Launches sharp stones at the opponent",
-        icon: Mountain,
-      },
-      {
-        id: "earth2",
-        name: "Earthquake",
-        type: "magical",
-        element: "earth",
-        power: 100,
-        accuracy: 80,
-        energyCost: 45,
-        description: "Creates a powerful earthquake to damage the opponent",
-        icon: Mountain,
-      },
-    ],
-    wind: [
-      {
-        id: "wind1",
-        name: "Gale Force",
-        type: "magical",
-        element: "wind",
-        power: 75,
-        accuracy: 100,
-        energyCost: 25,
-        description: "Summons a powerful gust of wind",
-        icon: Wind,
-      },
-      {
-        id: "wind2",
-        name: "Tornado Slash",
-        type: "physical",
-        element: "wind",
-        power: 85,
-        accuracy: 90,
-        energyCost: 30,
-        description: "A slashing attack enhanced by wind energy",
-        icon: Wind,
-      },
-    ],
-    light: [
-      {
-        id: "light1",
-        name: "Solar Flare",
-        type: "magical",
-        element: "light",
-        power: 90,
-        accuracy: 95,
-        energyCost: 35,
-        description: "Blinds the opponent with intense light",
-        icon: Sun,
-      },
-      {
-        id: "light2",
-        name: "Divine Strike",
-        type: "physical",
-        element: "light",
-        power: 80,
-        accuracy: 100,
-        energyCost: 30,
-        description: "A powerful strike imbued with light energy",
-        icon: Sun,
-      },
-      {
-        id: "light3",
-        name: "Divine Shield",
-        type: "status",
-        element: "light",
-        power: 0,
-        accuracy: 100,
-        energyCost: 20,
-        description: "Creates a protective barrier that boosts defense",
-        icon: Shield,
-      },
-      {
-        id: "light4",
-        name: "Celestial Surge",
-        type: "magical",
-        element: "light",
-        power: 120,
-        accuracy: 85,
-        energyCost: 50,
-        description: "Channels celestial energy for a devastating attack",
-        icon: Sparkles,
-      },
-    ],
-    dark: [
-      {
-        id: "dark1",
-        name: "Shadow Strike",
-        type: "physical",
-        element: "dark",
-        power: 85,
-        accuracy: 95,
-        energyCost: 30,
-        description: "A quick strike from the shadows",
-        icon: Moon,
-      },
-      {
-        id: "dark2",
-        name: "Void Blast",
-        type: "magical",
-        element: "dark",
-        power: 95,
-        accuracy: 85,
-        energyCost: 40,
-        description: "Channels void energy for a powerful blast",
-        icon: Moon,
-      },
-    ],
-  }
-
-  // Add a default set of moves for unknown elements
-  defaultMoves.default = [
-    {
-      id: "default1",
-      name: "Basic Attack",
-      type: "physical",
-      element: "neutral",
-      power: 60,
-      accuracy: 100,
-      energyCost: 15,
-      description: "A basic physical attack",
-      icon: Swords,
-    },
-    {
-      id: "default2",
-      name: "Energy Blast",
-      type: "magical",
-      element: "neutral",
-      power: 70,
-      accuracy: 90,
-      energyCost: 25,
-      description: "A blast of pure energy",
-      icon: Sparkles,
-    },
-    {
-      id: "default3",
-      name: "Guard",
-      type: "status",
-      element: "neutral",
-      power: 0,
-      accuracy: 100,
-      energyCost: 10,
-      description: "Defensive stance",
-      icon: Shield,
-    },
-    {
-      id: "default4",
-      name: "Power Strike",
-      type: "physical",
-      element: "neutral",
-      power: 90,
-      accuracy: 85,
-      energyCost: 35,
-      description: "A powerful attack",
-      icon: Star,
-    },
-  ]
-
-  // Add elemental effectiveness chart after the defaultMoves definition
+  // Add elemental effectiveness chart
   const elementalChart: Record<string, Record<string, number>> = {
     fire: { water: 0.5, earth: 2.0, wind: 1.5, light: 1.0, dark: 1.0, fire: 0.5 },
     water: { fire: 2.0, earth: 0.5, wind: 1.0, light: 1.0, dark: 1.0, water: 0.5 },
@@ -410,12 +171,12 @@ export default function BattleArenaScreen() {
 
     switch (beast.status.type) {
       case "burn":
-        const burnDamage = Math.floor(beast.maxHealth * 0.06) // Reduced from 8% to 6% since health is lower
+        const burnDamage = Math.floor(beast.maxHealth * 0.06) // 6% max health
         newHealth = Math.max(0, beast.health - burnDamage)
         statusMessage = `${beast.name} takes ${burnDamage} burn damage!`
         break
       case "poison":
-        const poisonDamage = Math.floor(beast.maxHealth * 0.04) // Reduced from 6% to 4%
+        const poisonDamage = Math.floor(beast.maxHealth * 0.04) // 4% max health
         newHealth = Math.max(0, beast.health - poisonDamage)
         statusMessage = `${beast.name} takes ${poisonDamage} poison damage!`
         break
@@ -502,24 +263,31 @@ export default function BattleArenaScreen() {
     }
   }
 
-  // Update the fetchBattleData function - replace the existing useEffect with this:
+  // Fetch beast abilities from database
+  const fetchBeastAbilities = async (abilityIds: string[]): Promise<BeastAbility[]> => {
+    try {
+      const { data: abilities, error } = await supabase.from("beast_abilities").select("*").in("id", abilityIds)
+
+      if (error) {
+        console.error("Error fetching beast abilities:", error)
+        return []
+      }
+
+      return abilities || []
+    } catch (error) {
+      console.error("Error fetching beast abilities:", error)
+      return []
+    }
+  }
+
+  // Update the fetchBattleData function
   useEffect(() => {
-    // Fetch the selected beast data and opponent data
     const fetchBattleData = async () => {
       setIsLoading(true)
       try {
-        // Get user ID and wallet address
+        // Get user ID
         const userId = await SecureStore.getItemAsync("userId")
-        const userWalletAddress = await SecureStore.getItemAsync("walletAddress")
 
-        // Set player name as truncated wallet address
-        // Remove these lines:
-        // if (userWalletAddress) {
-        //   setPlayer1Name(truncateWalletAddress(userWalletAddress))
-        // }
-        // setPlayer2Name(truncateWalletAddress(randomOpponent.users?.wallet_address || ""))
-
-        // Keep these simple assignments:
         setPlayer1Name("You")
         setPlayer2Name("Opponent")
 
@@ -545,25 +313,34 @@ export default function BattleArenaScreen() {
           return
         }
 
-        // Add health, energy, and stats properties to the beast
-        const playerBeast = {
+        // Parse metadata and get abilities
+        const playerMetadata = playerBeastData.metadata
+        const playerAbilityIds = playerMetadata.abilities || []
+        const playerAbilities = await fetchBeastAbilities(playerAbilityIds)
+
+        // Use allocated_stats instead of metadata stats
+        const allocatedStats = playerBeastData.allocated_stats || { attack: 50, defense: 50, speed: 50, health: 50 }
+
+        // Create player beast object
+        const playerBeast: Beast = {
           ...playerBeastData,
-          health: (playerBeastData.power || 100) * 2, // Changed from * 10 to * 2 for 200 HP max
-          maxHealth: (playerBeastData.power || 100) * 2,
+          health: allocatedStats.health * 4, // Use allocated health * 4 for max 200 HP
+          maxHealth: allocatedStats.health * 4,
           energy: 100,
           maxEnergy: 100,
-          level: Math.floor((playerBeastData.power || 100) / 100) + 1,
+          level: playerMetadata.tier || 1,
+          element: playerAbilities[0]?.element || "fire", // Use first ability's element
           stats: {
-            attack: playerBeastData.power || 100,
-            defense: Math.floor((playerBeastData.power || 100) * 0.8),
-            speed: Math.floor((playerBeastData.power || 100) * 0.9),
-            magic: Math.floor((playerBeastData.power || 100) * 0.7),
+            attack: allocatedStats.attack,
+            defense: allocatedStats.defense,
+            speed: allocatedStats.speed,
+            magic: allocatedStats.attack, // Use attack for magic
           },
+          abilities: playerAbilities,
         }
         setPlayer1Beast(playerBeast)
 
-        // Fetch opponent beast - in a real app, this would be from matchmaking
-        // For now, we'll fetch a random beast from the database that isn't owned by the user
+        // Fetch opponent beast
         const { data: opponentBeastData, error: opponentBeastError } = await supabase
           .from("beasts")
           .select("*, users!inner(wallet_address)")
@@ -577,26 +354,36 @@ export default function BattleArenaScreen() {
           return
         }
 
-        // Select a random opponent beast from the results
+        // Select random opponent
         const randomOpponent = opponentBeastData[Math.floor(Math.random() * opponentBeastData.length)]
+        const opponentMetadata = randomOpponent.metadata
+        const opponentAbilityIds = opponentMetadata.abilities || []
+        const opponentAbilities = await fetchBeastAbilities(opponentAbilityIds)
 
-        // Set opponent name as truncated wallet address
-        // setPlayer2Name(truncateWalletAddress(randomOpponent.users?.wallet_address || ""))
+        // Use allocated_stats for opponent too
+        const opponentAllocatedStats = randomOpponent.allocated_stats || {
+          attack: 50,
+          defense: 50,
+          speed: 50,
+          health: 50,
+        }
 
-        // Add health, energy, and stats properties to the opponent beast
-        const opponentBeast = {
+        // Create opponent beast object
+        const opponentBeast: Beast = {
           ...randomOpponent,
-          health: (randomOpponent.power || 100) * 2, // Changed from * 10 to * 2
-          maxHealth: (randomOpponent.power || 100) * 2,
+          health: opponentAllocatedStats.health * 4,
+          maxHealth: opponentAllocatedStats.health * 4,
           energy: 100,
           maxEnergy: 100,
-          level: Math.floor((randomOpponent.power || 100) / 100) + 1,
+          level: opponentMetadata.tier || 1,
+          element: opponentAbilities[0]?.element || "water",
           stats: {
-            attack: randomOpponent.power || 100,
-            defense: Math.floor((randomOpponent.power || 100) * 0.8),
-            speed: Math.floor((randomOpponent.power || 100) * 0.9),
-            magic: Math.floor((randomOpponent.power || 100) * 0.7),
+            attack: opponentAllocatedStats.attack,
+            defense: opponentAllocatedStats.defense,
+            speed: opponentAllocatedStats.speed,
+            magic: opponentAllocatedStats.attack,
           },
+          abilities: opponentAbilities,
         }
         setPlayer2Beast(opponentBeast)
 
@@ -627,12 +414,19 @@ export default function BattleArenaScreen() {
   }, [currentTurn, battleStarted, gameOver])
 
   const handleAIAttack = () => {
-    if (!player2Beast || gameOver) return
+    if (!player2Beast || gameOver || !player2Beast.abilities.length) return
 
-    // Get AI moves based on element
-    const element = player2Beast.element?.toLowerCase() || "default"
+    // Filter available moves (enough energy)
+    const availableMoves = player2Beast.abilities.filter((ability) => player2Beast.energy >= ability.energy_cost)
 
-    const availableMoves = defaultMoves[element] || defaultMoves.default
+    if (availableMoves.length === 0) {
+      // No moves available, skip turn
+      setTimeout(() => {
+        regenerateEnergy("player2")
+        processEndOfTurn("player2")
+      }, 1000)
+      return
+    }
 
     // Randomly select a move
     const randomMove = availableMoves[Math.floor(Math.random() * availableMoves.length)]
@@ -642,7 +436,7 @@ export default function BattleArenaScreen() {
   }
 
   // Replace the handleAttack function completely
-  const handleAttack = (move: Move, attacker: "player1" | "player2" = "player1") => {
+  const handleAttack = (ability: BeastAbility, attacker: "player1" | "player2" = "player1") => {
     if (gameOver) return
 
     const attackerBeast = attacker === "player1" ? player1Beast : player2Beast
@@ -671,11 +465,11 @@ export default function BattleArenaScreen() {
     }
 
     Vibration.vibrate(50)
-    setSelectedMove(move)
+    setSelectedMove(ability)
 
     // Calculate hit chance
     const hitRoll = Math.random() * 100
-    const missChance = 100 - move.accuracy
+    const missChance = 100 - ability.accuracy
 
     if (hitRoll < missChance) {
       // Attack missed - add shake animation for the attacker
@@ -688,7 +482,7 @@ export default function BattleArenaScreen() {
       setBattleLogs((prev) => [
         {
           id: Date.now().toString(),
-          message: `${attackerBeast.name}'s ${move.name} missed!`,
+          message: `${attackerBeast.name}'s ${ability.name} missed!`,
           type: "system",
           timestamp: Date.now(),
         },
@@ -714,27 +508,25 @@ export default function BattleArenaScreen() {
     const critRoll = Math.random() * 100
     const isCritical = critRoll < critChance
 
-    // Enhanced damage calculation
+    // Enhanced damage calculation based on ability type
     let damage = 0
+    let healing = 0
     let effectiveness = 1.0
 
-    if (move.type === "status") {
-      // Status moves don't deal damage but apply effects
-      applyStatusEffect(move, defenderBeast, attacker)
-    } else {
+    if (ability.type === "attack") {
       // Get elemental effectiveness
-      const attackerElement = attackerBeast.element?.toLowerCase() || "neutral"
-      const defenderElement = defenderBeast.element?.toLowerCase() || "neutral"
+      const attackerElement = ability.element
+      const defenderElement = defenderBeast.element
 
       if (elementalChart[attackerElement] && elementalChart[attackerElement][defenderElement]) {
         effectiveness = elementalChart[attackerElement][defenderElement]
       }
 
-      // Base damage calculation
-      const attackStat = move.type === "physical" ? attackerBeast.stats.attack : attackerBeast.stats.magic
-      const defenseStat = move.type === "physical" ? defenderBeast.stats.defense : defenderBeast.stats.magic
+      // Base damage calculation using ability power and beast stats
+      const attackStat = attackerBeast.stats.attack
+      const defenseStat = defenderBeast.stats.defense
 
-      damage = move.power * (attackStat / defenseStat) * 0.4 * effectiveness
+      damage = ability.power * (attackStat / defenseStat) * 0.4 * effectiveness
 
       // Add larger damage variance (±25%)
       damage = damage * (0.75 + Math.random() * 0.5)
@@ -753,6 +545,21 @@ export default function BattleArenaScreen() {
 
       // Round damage
       damage = Math.round(damage)
+    } else if (ability.type === "heal") {
+      // Healing ability
+      healing = Math.round(ability.power * 0.8) // Heal for 80% of power value
+      const newHealth = Math.min(attackerBeast.maxHealth, attackerBeast.health + healing)
+
+      if (attacker === "player1") {
+        setPlayer1Beast((prev) => ({ ...prev, health: newHealth }))
+        player1Health.value = withSpring((newHealth / attackerBeast.maxHealth) * 100)
+      } else {
+        setPlayer2Beast((prev) => ({ ...prev, health: newHealth }))
+        player2Health.value = withSpring((newHealth / attackerBeast.maxHealth) * 100)
+      }
+    } else if (ability.type === "buff" || ability.type === "debuff") {
+      // Status effects and buffs/debuffs
+      applyStatusEffect(ability, ability.type === "buff" ? attackerBeast : defenderBeast, attacker)
     }
 
     // Enhanced animations
@@ -812,21 +619,23 @@ export default function BattleArenaScreen() {
 
     // Update energy
     if (attacker === "player1") {
-      const newEnergy = Math.max(0, attackerBeast.energy - move.energyCost)
+      const newEnergy = Math.max(0, attackerBeast.energy - ability.energy_cost)
       player1Energy.value = withSpring((newEnergy / attackerBeast.maxEnergy) * 100)
       setPlayer1Beast((prev) => ({ ...prev, energy: newEnergy }))
     } else {
-      const newEnergy = Math.max(0, attackerBeast.energy - move.energyCost)
+      const newEnergy = Math.max(0, attackerBeast.energy - ability.energy_cost)
       player2Energy.value = withSpring((newEnergy / attackerBeast.maxEnergy) * 100)
       setPlayer2Beast((prev) => ({ ...prev, energy: newEnergy }))
     }
 
     // Create battle log message
     let logMessage = ""
-    if (move.type === "status") {
-      logMessage = `${attackerBeast.name} used ${move.name}!`
+    if (ability.type === "heal") {
+      logMessage = `${attackerBeast.name} used ${ability.name}! Restored ${healing} health!`
+    } else if (ability.type === "buff" || ability.type === "debuff") {
+      logMessage = `${attackerBeast.name} used ${ability.name}!`
     } else {
-      logMessage = `${attackerBeast.name} used ${move.name}!`
+      logMessage = `${attackerBeast.name} used ${ability.name}!`
       if (isCritical) logMessage += " Critical hit!"
       if (damage > 0) logMessage += ` Dealt ${damage} damage!`
       if (effectiveness > 1) logMessage += " It's super effective!"
@@ -837,7 +646,7 @@ export default function BattleArenaScreen() {
       {
         id: Date.now().toString(),
         message: logMessage,
-        type: isCritical ? "system" : "attack",
+        type: isCritical ? "system" : ability.type === "heal" ? "heal" : "attack",
         timestamp: Date.now(),
       },
       ...prev.slice(0, 4),
@@ -883,17 +692,17 @@ export default function BattleArenaScreen() {
     ])
   }
 
-  const applyStatusEffect = (move: Move, target: Beast, attacker: "player1" | "player2") => {
+  const applyStatusEffect = (ability: BeastAbility, target: Beast, attacker: "player1" | "player2") => {
     let statusType: "burn" | "freeze" | "poison" | undefined
     let duration = 3
 
-    // Determine status effect based on move
-    if (move.element === "fire") {
+    // Determine status effect based on ability element
+    if (ability.element === "fire") {
       statusType = "burn"
-    } else if (move.element === "water") {
+    } else if (ability.element === "water") {
       statusType = "freeze"
       duration = 2 // Freeze is shorter but more impactful
-    } else if (move.element === "dark") {
+    } else if (ability.element === "dark") {
       statusType = "poison"
     }
 
@@ -983,14 +792,16 @@ export default function BattleArenaScreen() {
     }
   }
 
-  const getMoveTypeColor = (type: Move["type"]) => {
+  const getAbilityTypeColor = (type: BeastAbility["type"]) => {
     switch (type) {
-      case "physical":
+      case "attack":
         return "#EF4444"
-      case "magical":
-        return "#7C3AED"
-      case "status":
+      case "heal":
         return "#10B981"
+      case "buff":
+        return "#7C3AED"
+      case "debuff":
+        return "#F59E0B"
     }
   }
 
@@ -1053,15 +864,12 @@ export default function BattleArenaScreen() {
             Preparing Epic Battle...
           </Animated.Text>
           <Animated.Text entering={FadeIn.delay(600)} style={styles.loadingSubtext}>
-            Summoning beasts from the digital realm
+            Loading beast abilities from database...
           </Animated.Text>
         </View>
       </SafeAreaView>
     )
   }
-
-  // Get player moves based on beast element
-  const playerMoves = defaultMoves[player1Beast.element?.toLowerCase() || "default"] || defaultMoves.default
 
   const handleGameOver = (winner: "player1" | "player2") => {
     setGameOver(true)
@@ -1117,7 +925,7 @@ export default function BattleArenaScreen() {
                   <Text style={styles.playerName}>{player2Name}</Text>
                   <View style={styles.modernRankBadge}>
                     <Crown size={14} color="#FFD700" />
-                    <Text style={styles.rankText}>#1234</Text>
+                    <Text style={styles.rankText}>#{player2Beast.level}</Text>
                   </View>
                 </View>
                 <View style={styles.beastInfo}>
@@ -1151,10 +959,10 @@ export default function BattleArenaScreen() {
                   <Text style={styles.modernStatText}>{Math.round(player2Beast.energy)}</Text>
                 </View>
               </View>
-              {(player1Beast.status || player2Beast.status) && (
+              {player2Beast.status && (
                 <View style={styles.statusEffectContainer}>
                   <Text style={styles.statusEffectText}>
-                    {player2Beast.status?.type}: {player2Beast.status?.duration} turns
+                    {player2Beast.status.type}: {player2Beast.status.duration} turns
                   </Text>
                 </View>
               )}
@@ -1301,7 +1109,7 @@ export default function BattleArenaScreen() {
                   <Text style={styles.playerName}>{player1Name}</Text>
                   <View style={styles.modernRankBadge}>
                     <Crown size={14} color="#FFD700" />
-                    <Text style={styles.rankText}>#1234</Text>
+                    <Text style={styles.rankText}>#{player1Beast.level}</Text>
                   </View>
                 </View>
                 <View style={styles.beastInfo}>
@@ -1335,10 +1143,10 @@ export default function BattleArenaScreen() {
                   <Text style={styles.modernStatText}>{Math.round(player1Beast.energy)}</Text>
                 </View>
               </View>
-              {(player1Beast.status || player2Beast.status) && (
+              {player1Beast.status && (
                 <View style={styles.statusEffectContainer}>
                   <Text style={styles.statusEffectText}>
-                    {player1Beast.status?.type}: {player1Beast.status?.duration} turns
+                    {player1Beast.status.type}: {player1Beast.status.duration} turns
                   </Text>
                 </View>
               )}
@@ -1376,49 +1184,54 @@ export default function BattleArenaScreen() {
                 style={StyleSheet.absoluteFill}
               />
               <View style={styles.modernMovesGrid}>
-                {playerMoves.map((move) => (
+                {player1Beast.abilities.map((ability) => (
                   <TouchableOpacity
-                    key={move.id}
+                    key={ability.id}
                     style={[
                       styles.modernMoveCard,
-                      { borderColor: getMoveTypeColor(move.type) },
-                      player1Beast.energy < move.energyCost && styles.disabledMove,
+                      { borderColor: getAbilityTypeColor(ability.type) },
+                      player1Beast.energy < ability.energy_cost && styles.disabledMove,
                     ]}
-                    onPress={() => player1Beast.energy >= move.energyCost && handleAttack(move)}
-                    disabled={player1Beast.energy < move.energyCost}
+                    onPress={() => player1Beast.energy >= ability.energy_cost && handleAttack(ability)}
+                    disabled={player1Beast.energy < ability.energy_cost}
                   >
                     <LinearGradient
-                      colors={[`${getMoveTypeColor(move.type)}30`, "rgba(0, 0, 0, 0.8)"]}
+                      colors={[`${getAbilityTypeColor(ability.type)}30`, "rgba(0, 0, 0, 0.8)"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={StyleSheet.absoluteFill}
                     />
                     <View style={styles.modernMoveHeader}>
-                      <move.icon size={28} color={getMoveTypeColor(move.type)} />
-                      <View style={[styles.modernMoveType, { backgroundColor: `${getMoveTypeColor(move.type)}50` }]}>
-                        <Text style={[styles.modernMoveTypeText, { color: getMoveTypeColor(move.type) }]}>
-                          {move.type}
+                      {createElement(getElementIcon(ability.element), {
+                        size: 28,
+                        color: getElementColor(ability.element),
+                      })}
+                      <View
+                        style={[styles.modernMoveType, { backgroundColor: `${getAbilityTypeColor(ability.type)}50` }]}
+                      >
+                        <Text style={[styles.modernMoveTypeText, { color: getAbilityTypeColor(ability.type) }]}>
+                          {ability.type}
                         </Text>
                       </View>
                     </View>
-                    <Text style={styles.modernMoveName}>{move.name}</Text>
+                    <Text style={styles.modernMoveName}>{ability.name}</Text>
                     <View style={styles.modernMoveStats}>
                       <View style={styles.modernMoveStat}>
-                        <Swords size={16} color={getMoveTypeColor(move.type)} />
-                        <Text style={[styles.modernMoveStatText, { color: getMoveTypeColor(move.type) }]}>
-                          {move.power}
+                        <Swords size={16} color={getAbilityTypeColor(ability.type)} />
+                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
+                          {ability.power}
                         </Text>
                       </View>
                       <View style={styles.modernMoveStat}>
-                        <Star size={16} color={getMoveTypeColor(move.type)} />
-                        <Text style={[styles.modernMoveStatText, { color: getMoveTypeColor(move.type) }]}>
-                          {move.accuracy}%
+                        <Star size={16} color={getAbilityTypeColor(ability.type)} />
+                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
+                          {ability.accuracy}%
                         </Text>
                       </View>
                       <View style={styles.modernMoveStat}>
-                        <Zap size={16} color={getMoveTypeColor(move.type)} />
-                        <Text style={[styles.modernMoveStatText, { color: getMoveTypeColor(move.type) }]}>
-                          {move.energyCost}
+                        <Zap size={16} color={getAbilityTypeColor(ability.type)} />
+                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
+                          {ability.energy_cost}
                         </Text>
                       </View>
                     </View>
@@ -1516,15 +1329,15 @@ const styles = StyleSheet.create({
   },
   enemyStats: {
     width: "100%",
-    marginBottom: 8, // Changed from 12 to 8
+    marginBottom: 8,
   },
   playerStats: {
     width: "100%",
-    marginTop: 8, // Changed from 12 to 8
+    marginTop: 8,
   },
   modernStatsCard: {
-    borderRadius: 16, // Changed from 20 to 16
-    padding: 8, // Changed from 12 to 8
+    borderRadius: 16,
+    padding: 8,
     borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.2)",
     overflow: "hidden",
@@ -1535,7 +1348,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   statsHeader: {
-    marginBottom: 12, // Changed from 16 to 12
+    marginBottom: 12,
   },
   playerInfo: {
     gap: 8,
@@ -1675,8 +1488,8 @@ const styles = StyleSheet.create({
   modernBeastContainer: {
     alignItems: "center",
     justifyContent: "center",
-    width: 240, // Changed from 200 to 240
-    height: 240, // Changed from 200 to 240
+    width: 240,
+    height: 240,
     position: "relative",
   },
   modernBeastGlow: {
@@ -1688,8 +1501,8 @@ const styles = StyleSheet.create({
     borderRadius: 120,
   },
   beastImageContainer: {
-    width: 200, // Changed from 160 to 200
-    height: 200, // Changed from 160 to 200
+    width: 200,
+    height: 200,
     borderRadius: 20,
     overflow: "hidden",
     borderWidth: 3,
@@ -1710,9 +1523,7 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     transform: [{ scaleY: 0.3 }],
   },
-  enemyBeastContainer: {
-    // Removed transform to keep enemy beast facing normal direction
-  },
+  enemyBeastContainer: {},
   playerBeastContainer: {
     marginTop: 20,
     transform: [{ scaleX: -1 }],
@@ -1829,7 +1640,7 @@ const styles = StyleSheet.create({
   },
   modernMovesPanel: {
     position: "absolute",
-    bottom: 140, // Changed from 120 to 140
+    bottom: 140,
     left: 16,
     right: 16,
     zIndex: 50,
