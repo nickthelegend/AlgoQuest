@@ -137,7 +137,7 @@ export default function ConfirmBattleScreen() {
       // Fetch sender's user info from database
       const { data: userData, error: userError } = await supabase
         .from("users")
-        .select("id, username")
+        .select("id, wallet_address")
         .eq("wallet_address", senderWalletAddress)
         .single()
 
@@ -147,7 +147,11 @@ export default function ConfirmBattleScreen() {
       }
 
       if (userData) {
-        setSenderName(userData.username || "Player")
+        // Truncate wallet address for display
+        const truncatedAddress = userData.wallet_address
+          ? `${userData.wallet_address.slice(0, 6)}...${userData.wallet_address.slice(-4)}`
+          : "Unknown Player"
+        setSenderName(truncatedAddress)
 
         // Fetch sender's selected beast
         const { data: beastData, error: beastError } = await supabase
