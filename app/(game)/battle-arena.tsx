@@ -14,8 +14,10 @@ import Animated, {
   withSequence,
   withTiming,
   useSharedValue,
-  FadeInUp,
-  FadeInDown,
+  SlideInUp,
+  SlideInDown,
+  ZoomIn,
+  BounceIn,
 } from "react-native-reanimated"
 import {
   Shield,
@@ -33,6 +35,8 @@ import {
   Star,
   X,
   AlertTriangle,
+  Timer,
+  Activity,
 } from "lucide-react-native"
 import { router, useLocalSearchParams } from "expo-router"
 import { createElement } from "react"
@@ -141,6 +145,7 @@ export default function BattleArenaScreen() {
   const player2Energy = useSharedValue(100)
   const shakeValue = useSharedValue(0)
   const flashValue = useSharedValue(0)
+  const battleFieldScale = useSharedValue(1)
 
   // Refs for beast images
   const player1BeastRef = useRef(null)
@@ -170,6 +175,28 @@ export default function BattleArenaScreen() {
         energyCost: 40,
         description: "Summons a raging inferno to engulf the opponent",
         icon: Flame,
+      },
+      {
+        id: "fire3",
+        name: "Fire Shield",
+        type: "status",
+        element: "fire",
+        power: 0,
+        accuracy: 100,
+        energyCost: 20,
+        description: "Creates a protective fire barrier",
+        icon: Shield,
+      },
+      {
+        id: "fire4",
+        name: "Meteor",
+        type: "magical",
+        element: "fire",
+        power: 120,
+        accuracy: 80,
+        energyCost: 50,
+        description: "Summons a devastating meteor",
+        icon: Star,
       },
     ],
     water: [
@@ -340,6 +367,28 @@ export default function BattleArenaScreen() {
       description: "A blast of pure energy",
       icon: Sparkles,
     },
+    {
+      id: "default3",
+      name: "Guard",
+      type: "status",
+      element: "neutral",
+      power: 0,
+      accuracy: 100,
+      energyCost: 10,
+      description: "Defensive stance",
+      icon: Shield,
+    },
+    {
+      id: "default4",
+      name: "Power Strike",
+      type: "physical",
+      element: "neutral",
+      power: 90,
+      accuracy: 85,
+      energyCost: 35,
+      description: "A powerful attack",
+      icon: Star,
+    },
   ]
 
   useEffect(() => {
@@ -399,9 +448,15 @@ export default function BattleArenaScreen() {
         const userWalletAddress = await SecureStore.getItemAsync("walletAddress")
 
         // Set player name as truncated wallet address
-        if (userWalletAddress) {
-          setPlayer1Name(truncateWalletAddress(userWalletAddress))
-        }
+        // Remove these lines:
+        // if (userWalletAddress) {
+        //   setPlayer1Name(truncateWalletAddress(userWalletAddress))
+        // }
+        // setPlayer2Name(truncateWalletAddress(randomOpponent.users?.wallet_address || ""))
+
+        // Keep these simple assignments:
+        setPlayer1Name("You")
+        setPlayer2Name("Opponent")
 
         // Get selected beast ID
         const selectedBeastId = beastId || (await SecureStore.getItemAsync("selectedBeastId"))
@@ -425,14 +480,20 @@ export default function BattleArenaScreen() {
           return
         }
 
-        // Add health and energy properties to the beast
+        // Add health, energy, and stats properties to the beast
         const playerBeast = {
           ...playerBeastData,
-          health: playerBeastData.power * 100,
-          maxHealth: playerBeastData.power * 100,
+          health: (playerBeastData.power || 100) * 10, // Changed from * 100 to * 10 for more reasonable health values
+          maxHealth: (playerBeastData.power || 100) * 10,
           energy: 100,
           maxEnergy: 100,
-          level: Math.floor(playerBeastData.power / 100) + 1,
+          level: Math.floor((playerBeastData.power || 100) / 100) + 1,
+          stats: {
+            attack: playerBeastData.power || 100,
+            defense: Math.floor((playerBeastData.power || 100) * 0.8),
+            speed: Math.floor((playerBeastData.power || 100) * 0.9),
+            magic: Math.floor((playerBeastData.power || 100) * 0.7),
+          },
         }
         setPlayer1Beast(playerBeast)
 
@@ -455,16 +516,22 @@ export default function BattleArenaScreen() {
         const randomOpponent = opponentBeastData[Math.floor(Math.random() * opponentBeastData.length)]
 
         // Set opponent name as truncated wallet address
-        setPlayer2Name(truncateWalletAddress(randomOpponent.users?.wallet_address || ""))
+        // setPlayer2Name(truncateWalletAddress(randomOpponent.users?.wallet_address || ""))
 
-        // Add health and energy properties to the opponent beast
+        // Add health, energy, and stats properties to the opponent beast
         const opponentBeast = {
           ...randomOpponent,
-          health: randomOpponent.power * 100,
-          maxHealth: randomOpponent.power * 100,
+          health: (randomOpponent.power || 100) * 10, // Changed from * 100 to * 10
+          maxHealth: (randomOpponent.power || 100) * 10,
           energy: 100,
           maxEnergy: 100,
-          level: Math.floor(randomOpponent.power / 100) + 1,
+          level: Math.floor((randomOpponent.power || 100) / 100) + 1,
+          stats: {
+            attack: randomOpponent.power || 100,
+            defense: Math.floor((randomOpponent.power || 100) * 0.8),
+            speed: Math.floor((randomOpponent.power || 100) * 0.9),
+            magic: Math.floor((randomOpponent.power || 100) * 0.7),
+          },
         }
         setPlayer2Beast(opponentBeast)
 
@@ -532,13 +599,20 @@ export default function BattleArenaScreen() {
     // Flash effect
     flashValue.value = withSequence(withTiming(1, { duration: 100 }), withTiming(0, { duration: 100 }))
 
+    // Battle field shake effect
+    battleFieldScale.value = withSequence(
+      withTiming(1.02, { duration: 100 }),
+      withTiming(0.98, { duration: 100 }),
+      withTiming(1, { duration: 100 }),
+    )
+
     // Calculate damage (simplified)
     const attackerBeast = attacker === "player1" ? player1Beast : player2Beast
     const defenderBeast = attacker === "player1" ? player2Beast : player1Beast
 
     if (!attackerBeast || !defenderBeast) return
 
-    // Base damage calculation
+    // Base damage calculation with proper stats
     let damage = move.power * (attackerBeast.stats.attack / defenderBeast.stats.defense) * 0.5
 
     // Add some randomness (±10%)
@@ -678,6 +752,10 @@ export default function BattleArenaScreen() {
     opacity: flashValue.value,
   }))
 
+  const battleFieldAnimation = useAnimatedStyle(() => ({
+    transform: [{ scale: battleFieldScale.value }],
+  }))
+
   const player1HealthStyle = useAnimatedStyle(() => ({
     width: `${player1Health.value}%`,
   }))
@@ -749,7 +827,7 @@ export default function BattleArenaScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <LinearGradient
-          colors={["#000000", "#1a1c2c", "#000000"]}
+          colors={["#0F0F23", "#1E1B4B", "#312E81"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
@@ -771,17 +849,20 @@ export default function BattleArenaScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <LinearGradient
-          colors={["#000000", "#1a1c2c", "#000000"]}
+          colors={["#0F0F23", "#1E1B4B", "#312E81"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
         <View style={styles.loadingContainer}>
-          <Animated.View entering={FadeIn}>
-            <Swords size={48} color="#7C3AED" />
+          <Animated.View entering={ZoomIn}>
+            <Activity size={64} color="#7C3AED" />
           </Animated.View>
           <Animated.Text entering={FadeIn.delay(300)} style={styles.loadingText}>
-            Preparing Battle...
+            Preparing Epic Battle...
+          </Animated.Text>
+          <Animated.Text entering={FadeIn.delay(600)} style={styles.loadingSubtext}>
+            Summoning beasts from the digital realm
           </Animated.Text>
         </View>
       </SafeAreaView>
@@ -793,230 +874,284 @@ export default function BattleArenaScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Rich Background */}
+      {/* Enhanced Background */}
       <LinearGradient
-        colors={["#000000", "#1a1c2c", "#000000"]}
+        colors={["#0F0F23", "#1E1B4B", "#312E81", "#1E1B4B", "#0F0F23"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
 
+      {/* Animated particles background */}
+      <View style={styles.particlesContainer}>
+        {[...Array(20)].map((_, i) => (
+          <Animated.View
+            key={i}
+            entering={FadeIn.delay(i * 100)}
+            style={[
+              styles.particle,
+              {
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 3}s`,
+              },
+            ]}
+          />
+        ))}
+      </View>
+
       {/* Battle Arena */}
-      <View style={styles.arenaContainer}>
-        {/* Enemy Stats (Top) */}
-        <Animated.View entering={FadeInDown} style={styles.enemyStats}>
-          <BlurView intensity={40} tint="dark" style={styles.statsCard}>
+      <Animated.View style={[styles.arenaContainer, battleFieldAnimation]}>
+        {/* Enhanced Enemy Stats (Top) */}
+        <Animated.View entering={SlideInDown.delay(200)} style={styles.enemyStats}>
+          <BlurView intensity={60} tint="dark" style={styles.modernStatsCard}>
             <LinearGradient
-              colors={["rgba(239, 68, 68, 0.2)", "rgba(0, 0, 0, 0)"]}
+              colors={[`${getElementColor(player2Beast.element)}40`, "rgba(0, 0, 0, 0.8)"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
             <View style={styles.statsHeader}>
               <View style={styles.playerInfo}>
-                <Text style={styles.playerName}>{player2Name}</Text>
-                <View style={styles.rankBadge}>
-                  <Crown size={12} color="#FFD700" />
-                  <Text style={styles.rankText}>#1100</Text>
+                <View style={styles.playerNameContainer}>
+                  <Text style={styles.playerName}>{player2Name}</Text>
+                  <View style={styles.modernRankBadge}>
+                    <Crown size={14} color="#FFD700" />
+                    <Text style={styles.rankText}>#1234</Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.beastInfo}>
-                <Text style={styles.beastName}>{player2Beast.name}</Text>
-                <View style={styles.elementBadge}>
-                  {createElement(getElementIcon(player2Beast.element), {
-                    size: 12,
-                    color: getElementColor(player2Beast.element),
-                  })}
-                  <Text style={[styles.elementText, { color: getElementColor(player2Beast.element) }]}>
-                    {player2Beast.element}
-                  </Text>
+                <View style={styles.beastInfo}>
+                  <Text style={styles.beastName}>{player2Beast.name}</Text>
+                  <View style={styles.modernElementBadge}>
+                    {createElement(getElementIcon(player2Beast.element), {
+                      size: 14,
+                      color: getElementColor(player2Beast.element),
+                    })}
+                    <Text style={[styles.elementText, { color: getElementColor(player2Beast.element) }]}>
+                      {player2Beast.element}
+                    </Text>
+                  </View>
                 </View>
               </View>
             </View>
 
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Heart size={16} color="#EF4444" />
-                <View style={styles.statBarContainer}>
-                  <Animated.View style={[styles.statBar, player2HealthStyle, { backgroundColor: "#EF4444" }]} />
-                  <Text style={styles.statText}>{Math.round(player2Beast.health)}</Text>
+            <View style={styles.modernStatsGrid}>
+              <View style={styles.modernStatItem}>
+                <Heart size={18} color="#EF4444" />
+                <View style={styles.modernStatBarContainer}>
+                  <Animated.View style={[styles.modernStatBar, player2HealthStyle, { backgroundColor: "#EF4444" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(player2Beast.health) || 0}</Text>
                 </View>
               </View>
 
-              <View style={styles.statItem}>
-                <Zap size={16} color="#7C3AED" />
-                <View style={styles.statBarContainer}>
-                  <Animated.View style={[styles.statBar, player2EnergyStyle, { backgroundColor: "#7C3AED" }]} />
-                  <Text style={styles.statText}>{Math.round(player2Beast.energy)}</Text>
+              <View style={styles.modernStatItem}>
+                <Zap size={18} color="#7C3AED" />
+                <View style={styles.modernStatBarContainer}>
+                  <Animated.View style={[styles.modernStatBar, player2EnergyStyle, { backgroundColor: "#7C3AED" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(player2Beast.energy)}</Text>
                 </View>
               </View>
             </View>
           </BlurView>
         </Animated.View>
 
-        {/* Battle Scene */}
+        {/* Enhanced Battle Scene */}
         <View style={styles.battleScene}>
-          {/* Battle Timer */}
+          {/* Modern Battle Timer */}
           {!gameOver && (
-            <Animated.View entering={FadeIn} style={styles.battleTimer}>
-              <BlurView intensity={40} tint="dark" style={styles.timerCard}>
-                <LinearGradient
-                  colors={["rgba(124, 58, 237, 0.2)", "rgba(0, 0, 0, 0)"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <Text style={styles.timerText}>{turnTime}s</Text>
-                <Text style={styles.turnText}>{currentTurn === "player1" ? "Your" : "Opponent's"} Turn</Text>
-              </BlurView>
-            </Animated.View>
-          )}
-
-          {/* Enemy Beast */}
-          <Animated.View
-            ref={player2BeastRef}
-            entering={SlideInRight.delay(300)}
-            style={[styles.beastContainer, styles.enemyBeastContainer, currentTurn === "player1" && shakeAnimation]}
-          >
-            <LinearGradient
-              colors={[`${getElementColor(player2Beast.element)}40`, "transparent"]}
-              style={styles.beastGlow}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-            />
-            <Image
-              source={{ uri: getImageUrl(player2Beast.image_url) }}
-              style={styles.beastImage}
-              resizeMode="contain"
-              onError={(e) => console.log("Error loading enemy beast image:", e.nativeEvent.error)}
-            />
-          </Animated.View>
-
-          {/* Player Beast */}
-          <Animated.View
-            ref={player1BeastRef}
-            entering={SlideInLeft.delay(300)}
-            style={[styles.beastContainer, styles.playerBeastContainer, currentTurn === "player2" && shakeAnimation]}
-          >
-            <LinearGradient
-              colors={[`${getElementColor(player1Beast.element)}40`, "transparent"]}
-              style={styles.beastGlow}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-            />
-            <Image
-              source={{ uri: getImageUrl(player1Beast.image_url) }}
-              style={styles.beastImage}
-              resizeMode="contain"
-              onError={(e) => console.log("Error loading player beast image:", e.nativeEvent.error)}
-            />
-          </Animated.View>
-
-          {/* VS Badge (only shown at start) */}
-          {!battleStarted && (
-            <Animated.View entering={FadeIn.delay(500)} style={styles.vsBadge}>
-              <BlurView intensity={60} tint="dark" style={styles.vsBadgeContent}>
-                <LinearGradient
-                  colors={["rgba(239, 68, 68, 0.4)", "rgba(124, 58, 237, 0.4)"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <Text style={styles.vsText}>VS</Text>
-              </BlurView>
-            </Animated.View>
-          )}
-
-          {/* Game Over Overlay */}
-          {gameOver && (
-            <Animated.View entering={FadeIn} style={styles.gameOverOverlay}>
-              <BlurView intensity={40} tint="dark" style={styles.gameOverCard}>
+            <Animated.View entering={BounceIn.delay(500)} style={styles.modernBattleTimer}>
+              <BlurView intensity={80} tint="dark" style={styles.modernTimerCard}>
                 <LinearGradient
                   colors={[
-                    winner === "player1" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)",
-                    "rgba(0, 0, 0, 0.3)",
+                    turnTime <= 10 ? "rgba(239, 68, 68, 0.6)" : "rgba(124, 58, 237, 0.4)",
+                    "rgba(245, 158, 11, 0.4)",
                   ]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={StyleSheet.absoluteFill}
                 />
-                <Text style={styles.gameOverTitle}>{winner === "player1" ? "Victory!" : "Defeat!"}</Text>
-                <Text style={styles.gameOverText}>
+                <Timer size={20} color="#F59E0B" />
+                <Text style={styles.modernTimerText}>{turnTime}</Text>
+                <Text style={styles.modernTurnText}>{currentTurn === "player1" ? "Your Turn" : "Enemy Turn"}</Text>
+                <View
+                  style={{
+                    position: "absolute",
+                    top: -2,
+                    left: -2,
+                    right: -2,
+                    bottom: -2,
+                    borderRadius: 26,
+                    borderWidth: 2,
+                    borderColor: turnTime <= 10 ? "#EF4444" : "#7C3AED",
+                    opacity: 0.6,
+                  }}
+                />
+              </BlurView>
+            </Animated.View>
+          )}
+
+          {/* Enhanced Enemy Beast */}
+          <Animated.View
+            ref={player2BeastRef}
+            entering={SlideInRight.delay(400)}
+            style={[
+              styles.modernBeastContainer,
+              styles.enemyBeastContainer,
+              currentTurn === "player1" && shakeAnimation,
+            ]}
+          >
+            <LinearGradient
+              colors={[`${getElementColor(player2Beast.element)}60`, "transparent"]}
+              style={styles.modernBeastGlow}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+            />
+            <View style={styles.beastImageContainer}>
+              <Image
+                source={{ uri: getImageUrl(player2Beast.image_url) }}
+                style={styles.modernBeastImage}
+                resizeMode="contain"
+                onError={(e) => console.log("Error loading enemy beast image:", e.nativeEvent.error)}
+              />
+            </View>
+            <View style={styles.beastShadow} />
+          </Animated.View>
+
+          {/* Enhanced Player Beast */}
+          <Animated.View
+            ref={player1BeastRef}
+            entering={SlideInLeft.delay(400)}
+            style={[
+              styles.modernBeastContainer,
+              styles.playerBeastContainer,
+              currentTurn === "player2" && shakeAnimation,
+            ]}
+          >
+            <LinearGradient
+              colors={[`${getElementColor(player1Beast.element)}60`, "transparent"]}
+              style={styles.modernBeastGlow}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+            />
+            <View style={styles.beastImageContainer}>
+              <Image
+                source={{ uri: getImageUrl(player1Beast.image_url) }}
+                style={styles.modernBeastImage}
+                resizeMode="contain"
+                onError={(e) => console.log("Error loading player beast image:", e.nativeEvent.error)}
+              />
+            </View>
+            <View style={styles.beastShadow} />
+          </Animated.View>
+
+          {/* Enhanced VS Badge */}
+          {!battleStarted && (
+            <Animated.View entering={ZoomIn.delay(600)} style={styles.modernVsBadge}>
+              <BlurView intensity={80} tint="dark" style={styles.modernVsBadgeContent}>
+                <LinearGradient
+                  colors={["rgba(239, 68, 68, 0.6)", "rgba(124, 58, 237, 0.6)"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Text style={styles.modernVsText}>VS</Text>
+                <View style={styles.vsGlow} />
+              </BlurView>
+            </Animated.View>
+          )}
+
+          {/* Enhanced Game Over Overlay */}
+          {gameOver && (
+            <Animated.View entering={ZoomIn} style={styles.gameOverOverlay}>
+              <BlurView intensity={60} tint="dark" style={styles.modernGameOverCard}>
+                <LinearGradient
+                  colors={[
+                    winner === "player1" ? "rgba(16, 185, 129, 0.4)" : "rgba(239, 68, 68, 0.4)",
+                    "rgba(0, 0, 0, 0.8)",
+                  ]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Text style={styles.modernGameOverTitle}>{winner === "player1" ? "🏆 VICTORY!" : "💀 DEFEAT!"}</Text>
+                <Text style={styles.modernGameOverText}>
                   {winner === "player1"
-                    ? `Your ${player1Beast.name} has defeated the opponent's ${player2Beast.name}!`
-                    : `Your ${player1Beast.name} has been defeated by the opponent's ${player2Beast.name}!`}
+                    ? `Your ${player1Beast.name} has triumphed over ${player2Beast.name}!`
+                    : `Your ${player1Beast.name} has fallen to ${player2Beast.name}!`}
                 </Text>
-                <TouchableOpacity style={styles.exitButton} onPress={() => router.back()}>
-                  <Text style={styles.exitButtonText}>Return to Map</Text>
+                <TouchableOpacity style={styles.modernExitButton} onPress={() => router.back()}>
+                  <Text style={styles.modernExitButtonText}>Return to Map</Text>
                 </TouchableOpacity>
               </BlurView>
             </Animated.View>
           )}
         </View>
 
-        {/* Player Stats (Bottom) */}
-        <Animated.View entering={FadeInUp} style={styles.playerStats}>
-          <BlurView intensity={40} tint="dark" style={styles.statsCard}>
+        {/* Enhanced Player Stats (Bottom) */}
+        <Animated.View entering={SlideInUp.delay(200)} style={styles.playerStats}>
+          <BlurView intensity={60} tint="dark" style={styles.modernStatsCard}>
             <LinearGradient
-              colors={["rgba(124, 58, 237, 0.2)", "rgba(0, 0, 0, 0)"]}
+              colors={[`${getElementColor(player1Beast.element)}40`, "rgba(0, 0, 0, 0.8)"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
             <View style={styles.statsHeader}>
               <View style={styles.playerInfo}>
-                <Text style={styles.playerName}>{player1Name}</Text>
-                <View style={styles.rankBadge}>
-                  <Crown size={12} color="#FFD700" />
-                  <Text style={styles.rankText}>#1234</Text>
+                <View style={styles.playerNameContainer}>
+                  <Text style={styles.playerName}>{player1Name}</Text>
+                  <View style={styles.modernRankBadge}>
+                    <Crown size={14} color="#FFD700" />
+                    <Text style={styles.rankText}>#1234</Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.beastInfo}>
-                <Text style={styles.beastName}>{player1Beast.name}</Text>
-                <View style={styles.elementBadge}>
-                  {createElement(getElementIcon(player1Beast.element), {
-                    size: 12,
-                    color: getElementColor(player1Beast.element),
-                  })}
-                  <Text style={[styles.elementText, { color: getElementColor(player1Beast.element) }]}>
-                    {player1Beast.element}
-                  </Text>
+                <View style={styles.beastInfo}>
+                  <Text style={styles.beastName}>{player1Beast.name}</Text>
+                  <View style={styles.modernElementBadge}>
+                    {createElement(getElementIcon(player1Beast.element), {
+                      size: 14,
+                      color: getElementColor(player1Beast.element),
+                    })}
+                    <Text style={[styles.elementText, { color: getElementColor(player1Beast.element) }]}>
+                      {player1Beast.element}
+                    </Text>
+                  </View>
                 </View>
               </View>
             </View>
 
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Heart size={16} color="#EF4444" />
-                <View style={styles.statBarContainer}>
-                  <Animated.View style={[styles.statBar, player1HealthStyle, { backgroundColor: "#EF4444" }]} />
-                  <Text style={styles.statText}>{Math.round(player1Beast.health)}</Text>
+            <View style={styles.modernStatsGrid}>
+              <View style={styles.modernStatItem}>
+                <Heart size={18} color="#EF4444" />
+                <View style={styles.modernStatBarContainer}>
+                  <Animated.View style={[styles.modernStatBar, player1HealthStyle, { backgroundColor: "#EF4444" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(player1Beast.health) || 0}</Text>
                 </View>
               </View>
 
-              <View style={styles.statItem}>
-                <Zap size={16} color="#7C3AED" />
-                <View style={styles.statBarContainer}>
-                  <Animated.View style={[styles.statBar, player1EnergyStyle, { backgroundColor: "#7C3AED" }]} />
-                  <Text style={styles.statText}>{Math.round(player1Beast.energy)}</Text>
+              <View style={styles.modernStatItem}>
+                <Zap size={18} color="#7C3AED" />
+                <View style={styles.modernStatBarContainer}>
+                  <Animated.View style={[styles.modernStatBar, player1EnergyStyle, { backgroundColor: "#7C3AED" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(player1Beast.energy)}</Text>
                 </View>
               </View>
             </View>
           </BlurView>
         </Animated.View>
 
-        {/* Battle Log */}
+        {/* Enhanced Battle Log */}
         {showBattleLog && (
-          <Animated.View entering={SlideInLeft} style={styles.battleLog}>
-            <BlurView intensity={40} tint="dark" style={styles.battleLogCard}>
+          <Animated.View entering={SlideInLeft} style={styles.modernBattleLog}>
+            <BlurView intensity={60} tint="dark" style={styles.modernBattleLogCard}>
               <LinearGradient
-                colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]}
+                colors={["rgba(124, 58, 237, 0.2)", "rgba(0, 0, 0, 0.8)"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
               />
               {battleLogs.map((log) => (
-                <Text key={log.id} style={[styles.logText, styles[`log${log.type}`]]}>
+                <Text key={log.id} style={[styles.modernLogText, styles[`log${log.type}`]]}>
                   {log.message}
                 </Text>
               ))}
@@ -1024,22 +1159,22 @@ export default function BattleArenaScreen() {
           </Animated.View>
         )}
 
-        {/* Moves Panel - Only show when it's player's turn and game is not over */}
+        {/* Enhanced Moves Panel */}
         {currentTurn === "player1" && !gameOver && (
-          <Animated.View entering={FadeInUp} style={styles.movesPanel}>
-            <BlurView intensity={40} tint="dark" style={styles.movesPanelContent}>
+          <Animated.View entering={SlideInUp.delay(300)} style={styles.modernMovesPanel}>
+            <BlurView intensity={60} tint="dark" style={styles.modernMovesPanelContent}>
               <LinearGradient
-                colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]}
+                colors={["rgba(124, 58, 237, 0.2)", "rgba(0, 0, 0, 0.8)"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
               />
-              <View style={styles.movesGrid}>
+              <View style={styles.modernMovesGrid}>
                 {playerMoves.map((move) => (
                   <TouchableOpacity
                     key={move.id}
                     style={[
-                      styles.moveCard,
+                      styles.modernMoveCard,
                       { borderColor: getMoveTypeColor(move.type) },
                       player1Beast.energy < move.energyCost && styles.disabledMove,
                     ]}
@@ -1047,32 +1182,36 @@ export default function BattleArenaScreen() {
                     disabled={player1Beast.energy < move.energyCost}
                   >
                     <LinearGradient
-                      colors={[`${getMoveTypeColor(move.type)}20`, "rgba(0, 0, 0, 0)"]}
+                      colors={[`${getMoveTypeColor(move.type)}30`, "rgba(0, 0, 0, 0.8)"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={StyleSheet.absoluteFill}
                     />
-                    <View style={styles.moveHeader}>
-                      <move.icon size={24} color={getMoveTypeColor(move.type)} />
-                      <View style={[styles.moveType, { backgroundColor: `${getMoveTypeColor(move.type)}40` }]}>
-                        <Text style={[styles.moveTypeText, { color: getMoveTypeColor(move.type) }]}>{move.type}</Text>
+                    <View style={styles.modernMoveHeader}>
+                      <move.icon size={28} color={getMoveTypeColor(move.type)} />
+                      <View style={[styles.modernMoveType, { backgroundColor: `${getMoveTypeColor(move.type)}50` }]}>
+                        <Text style={[styles.modernMoveTypeText, { color: getMoveTypeColor(move.type) }]}>
+                          {move.type}
+                        </Text>
                       </View>
                     </View>
-                    <Text style={styles.moveName}>{move.name}</Text>
-                    <View style={styles.moveStats}>
-                      <View style={styles.moveStat}>
-                        <Swords size={14} color={getMoveTypeColor(move.type)} />
-                        <Text style={[styles.moveStatText, { color: getMoveTypeColor(move.type) }]}>{move.power}</Text>
+                    <Text style={styles.modernMoveName}>{move.name}</Text>
+                    <View style={styles.modernMoveStats}>
+                      <View style={styles.modernMoveStat}>
+                        <Swords size={16} color={getMoveTypeColor(move.type)} />
+                        <Text style={[styles.modernMoveStatText, { color: getMoveTypeColor(move.type) }]}>
+                          {move.power}
+                        </Text>
                       </View>
-                      <View style={styles.moveStat}>
-                        <Star size={14} color={getMoveTypeColor(move.type)} />
-                        <Text style={[styles.moveStatText, { color: getMoveTypeColor(move.type) }]}>
+                      <View style={styles.modernMoveStat}>
+                        <Star size={16} color={getMoveTypeColor(move.type)} />
+                        <Text style={[styles.modernMoveStatText, { color: getMoveTypeColor(move.type) }]}>
                           {move.accuracy}%
                         </Text>
                       </View>
-                      <View style={styles.moveStat}>
-                        <Zap size={14} color={getMoveTypeColor(move.type)} />
-                        <Text style={[styles.moveStatText, { color: getMoveTypeColor(move.type) }]}>
+                      <View style={styles.modernMoveStat}>
+                        <Zap size={16} color={getMoveTypeColor(move.type)} />
+                        <Text style={[styles.modernMoveStatText, { color: getMoveTypeColor(move.type) }]}>
                           {move.energyCost}
                         </Text>
                       </View>
@@ -1084,13 +1223,13 @@ export default function BattleArenaScreen() {
           </Animated.View>
         )}
 
-        {/* Back Button */}
-        <TouchableOpacity style={styles.backButton} onPress={handleExitBattle}>
-          <BlurView intensity={40} tint="dark" style={styles.backButtonContent}>
+        {/* Enhanced Back Button */}
+        <TouchableOpacity style={styles.modernBackButton} onPress={handleExitBattle}>
+          <BlurView intensity={60} tint="dark" style={styles.modernBackButtonContent}>
             <X size={24} color="#ffffff" />
           </BlurView>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     </SafeAreaView>
   )
 }
@@ -1098,24 +1237,47 @@ export default function BattleArenaScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000000",
+    backgroundColor: "#0F0F23",
+  },
+  particlesContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1,
+  },
+  particle: {
+    position: "absolute",
+    width: 4,
+    height: 4,
+    backgroundColor: "rgba(124, 58, 237, 0.3)",
+    borderRadius: 2,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     gap: 20,
+    zIndex: 2,
   },
   loadingText: {
     color: "#ffffff",
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: "bold",
+    textAlign: "center",
+  },
+  loadingSubtext: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 16,
+    textAlign: "center",
   },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+    zIndex: 2,
   },
   errorTitle: {
     color: "#ffffff",
@@ -1144,49 +1306,59 @@ const styles = StyleSheet.create({
   arenaContainer: {
     flex: 1,
     padding: 16,
+    zIndex: 2,
   },
   enemyStats: {
     width: "100%",
-    marginBottom: 10,
+    marginBottom: 8, // Changed from 12 to 8
   },
   playerStats: {
     width: "100%",
-    marginTop: 10,
+    marginTop: 8, // Changed from 12 to 8
   },
-  statsCard: {
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+  modernStatsCard: {
+    borderRadius: 16, // Changed from 20 to 16
+    padding: 8, // Changed from 12 to 8
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.2)",
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   statsHeader: {
-    marginBottom: 12,
+    marginBottom: 12, // Changed from 16 to 12
   },
   playerInfo: {
+    gap: 8,
+  },
+  playerNameContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 6,
   },
   playerName: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "bold",
     color: "#ffffff",
   },
-  rankBadge: {
+  modernRankBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(255, 215, 0, 0.2)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    gap: 6,
+    backgroundColor: "rgba(255, 215, 0, 0.3)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 215, 0, 0.5)",
   },
   rankText: {
     color: "#FFD700",
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "700",
   },
   beastInfo: {
     flexDirection: "row",
@@ -1194,143 +1366,244 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   beastName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "600",
     color: "#ffffff",
   },
-  elementBadge: {
+  modernElementBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    gap: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
   },
   elementText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "600",
   },
-  statsGrid: {
-    gap: 8,
+  modernStatsGrid: {
+    gap: 12,
   },
-  statItem: {
+  modernStatItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 12,
   },
-  statBarContainer: {
+  modernStatBarContainer: {
     flex: 1,
-    height: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 4,
+    height: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 6,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
   },
-  statBar: {
+  modernStatBar: {
     position: "absolute",
     top: 0,
     left: 0,
     bottom: 0,
-    borderRadius: 4,
+    borderRadius: 6,
   },
-  statText: {
+  modernStatText: {
     position: "absolute",
-    right: 4,
-    color: "#ffffff",
-    fontSize: 10,
-    fontWeight: "600",
-    lineHeight: 8,
-  },
-  statusEffects: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 8,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
+    right: 8,
     color: "#ffffff",
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
+    lineHeight: 12,
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   battleScene: {
     flex: 1,
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 10,
+    paddingVertical: 20,
   },
-  battleTimer: {
+  modernBattleTimer: {
     position: "absolute",
-    top: "50%",
+    top: "45%",
     left: "50%",
-    transform: [{ translateX: -50 }, { translateY: -50 }],
+    transform: [{ translateX: -75 }, { translateY: -50 }],
     zIndex: 10,
   },
-  timerCard: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+  modernTimerCard: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderRadius: 24,
+    borderWidth: 3,
+    borderColor: "rgba(255, 255, 255, 0.4)",
     alignItems: "center",
+    minWidth: 150,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 12,
   },
-  timerText: {
-    fontSize: 20,
-    fontWeight: "bold",
+  modernTimerText: {
+    fontSize: 32,
+    fontWeight: "900",
     color: "#F59E0B",
+    marginVertical: 2,
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 4,
   },
-  turnText: {
-    fontSize: 12,
+  modernTurnText: {
+    fontSize: 14,
     color: "#ffffff",
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
-  beastContainer: {
+  modernBeastContainer: {
     alignItems: "center",
     justifyContent: "center",
-    width: 180,
-    height: 180,
+    width: 240, // Changed from 200 to 240
+    height: 240, // Changed from 200 to 240
     position: "relative",
   },
-  beastGlow: {
+  modernBeastGlow: {
     position: "absolute",
-    top: -20,
-    left: -20,
-    right: -20,
+    top: -30,
+    left: -30,
+    right: -30,
+    bottom: -30,
+    borderRadius: 120,
+  },
+  beastImageContainer: {
+    width: 200, // Changed from 160 to 200
+    height: 200, // Changed from 160 to 200
+    borderRadius: 20,
+    overflow: "hidden",
+    borderWidth: 3,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+  },
+  modernBeastImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  beastShadow: {
+    position: "absolute",
     bottom: -20,
-    borderRadius: 100,
+    width: 120,
+    height: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    borderRadius: 60,
+    transform: [{ scaleY: 0.3 }],
   },
   enemyBeastContainer: {
     transform: [{ scaleX: -1 }],
   },
   playerBeastContainer: {
-    marginTop: 10,
+    marginTop: 20,
   },
-  beastImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "contain",
-    borderRadius: 10,
-  },
-  battleLog: {
+  modernVsBadge: {
     position: "absolute",
     top: "50%",
     left: "50%",
-    transform: [{ translateX: -140 }, { translateY: -50 }],
-    width: 280,
+    transform: [{ translateX: -50 }, { translateY: -50 }],
+    zIndex: 30,
+  },
+  modernVsBadgeContent: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: "rgba(255, 255, 255, 0.5)",
+  },
+  modernVsText: {
+    fontSize: 36,
+    fontWeight: "bold",
+    color: "#ffffff",
+  },
+  vsGlow: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    top: -10,
+    left: -10,
+  },
+  gameOverOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 100,
+  },
+  modernGameOverCard: {
+    width: "85%",
+    padding: 24,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    alignItems: "center",
+  },
+  modernGameOverTitle: {
+    fontSize: 36,
+    fontWeight: "bold",
+    color: "#ffffff",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  modernGameOverText: {
+    fontSize: 18,
+    color: "#ffffff",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  modernExitButton: {
+    backgroundColor: "rgba(124, 58, 237, 0.9)",
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+  },
+  modernExitButtonText: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  modernBattleLog: {
+    position: "absolute",
+    top: "40%",
+    left: "50%",
+    transform: [{ translateX: -150 }, { translateY: -60 }],
+    width: 300,
     zIndex: 20,
   },
-  battleLogCard: {
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+  modernBattleLogCard: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
-  logText: {
-    fontSize: 14,
-    marginBottom: 4,
+  modernLogText: {
+    fontSize: 16,
+    marginBottom: 6,
     color: "#ffffff",
+    fontWeight: "500",
   },
   logattack: {
     color: "#EF4444",
@@ -1347,145 +1620,85 @@ const styles = StyleSheet.create({
   logsystem: {
     color: "#94A3B8",
   },
-  movesPanel: {
+  modernMovesPanel: {
     position: "absolute",
-    bottom: 100,
+    bottom: 140, // Changed from 120 to 140
     left: 16,
     right: 16,
-    marginBottom: 8,
     zIndex: 50,
   },
-  movesPanelContent: {
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+  modernMovesPanelContent: {
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
-  movesGrid: {
+  modernMovesGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
   },
-  moveCard: {
+  modernMoveCard: {
     flex: 1,
     minWidth: "48%",
-    padding: 8,
-    borderRadius: 12,
-    borderWidth: 1,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 2,
     overflow: "hidden",
+    minHeight: 120,
   },
   disabledMove: {
-    opacity: 0.5,
+    opacity: 0.4,
   },
-  moveHeader: {
+  modernMoveHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  modernMoveType: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+  },
+  modernMoveTypeText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  modernMoveName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#ffffff",
     marginBottom: 8,
   },
-  moveType: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  moveTypeText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  moveName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#ffffff",
-    marginBottom: 4,
-  },
-  moveStats: {
+  modernMoveStats: {
     flexDirection: "row",
     justifyContent: "space-between",
   },
-  moveStat: {
+  modernMoveStat: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
   },
-  moveStatText: {
-    fontSize: 12,
-    fontWeight: "500",
+  modernMoveStatText: {
+    fontSize: 14,
+    fontWeight: "600",
   },
-  backButton: {
+  modernBackButton: {
     position: "absolute",
     top: 16,
     left: 16,
     zIndex: 100,
   },
-  backButtonContent: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  vsBadge: {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: [{ translateX: -40 }, { translateY: -40 }],
-    zIndex: 30,
-  },
-  vsBadgeContent: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  modernBackButtonContent: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.3)",
-  },
-  vsText: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#ffffff",
-  },
-  gameOverOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 100,
-  },
-  gameOverCard: {
-    width: "80%",
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    alignItems: "center",
-  },
-  gameOverTitle: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#ffffff",
-    marginBottom: 16,
-  },
-  gameOverText: {
-    fontSize: 16,
-    color: "#ffffff",
-    textAlign: "center",
-    marginBottom: 24,
-  },
-  exitButton: {
-    backgroundColor: "rgba(124, 58, 237, 0.8)",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-  },
-  exitButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "bold",
   },
 })
