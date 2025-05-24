@@ -374,6 +374,10 @@ export default function BattleArenaScreen() {
         const opponentAbilityIds = opponentMetadata.abilities || []
         const opponentAbilities = await fetchBeastAbilities(opponentAbilityIds)
 
+        // Set opponent name to truncated wallet address
+        const opponentWalletAddress = randomOpponent.users?.wallet_address || "Unknown"
+        setPlayer2Name(truncateWalletAddress(opponentWalletAddress))
+
         // Use allocated_stats for opponent too
         const opponentAllocatedStats = randomOpponent.allocated_stats || {
           attack: 50,
@@ -1107,8 +1111,8 @@ export default function BattleArenaScreen() {
             <View style={styles.beastShadow} />
           </Animated.View>
 
-          {/* Enhanced VS Badge */}
-          {!battleStarted && (
+          {/* Enhanced VS Badge - Show during battle */}
+          {battleStarted && !gameOver && (
             <Animated.View entering={ZoomIn.delay(600)} style={styles.modernVsBadge}>
               <BlurView intensity={80} tint="dark" style={styles.modernVsBadgeContent}>
                 <LinearGradient
@@ -1543,8 +1547,8 @@ const styles = StyleSheet.create({
   modernBeastContainer: {
     alignItems: "center",
     justifyContent: "center",
-    width: 260,
-    height: 260,
+    width: 220,
+    height: 220,
     position: "relative",
   },
   modernBeastGlow: {
@@ -1553,7 +1557,7 @@ const styles = StyleSheet.create({
     left: -30,
     right: -30,
     bottom: -30,
-    borderRadius: 120,
+    borderRadius: 20,
   },
   beastImageContainer: {
     width: 220,
@@ -1590,8 +1594,17 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: "50%",
     left: "50%",
-    transform: [{ translateX: -50 }, { translateY: -50 }],
+    width: 100,
+    height: 100,
+    transform: [
+      { translateX: -50 }, // half of width
+      { translateY: -50 }, // half of height
+    ],
     zIndex: 30,
+    borderRadius: 50,
+
+    alignItems: "center",
+    justifyContent: "center",
   },
   modernVsBadgeContent: {
     width: 100,
@@ -1602,6 +1615,7 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: "rgba(255, 255, 255, 0.5)",
   },
+  
   modernVsText: {
     fontSize: 36,
     fontWeight: "bold",
@@ -1609,13 +1623,15 @@ const styles = StyleSheet.create({
   },
   vsGlow: {
     position: "absolute",
+    top: -10,
+    left: -10,
     width: 120,
     height: 120,
     borderRadius: 60,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
-    top: -10,
-    left: -10,
+    zIndex: -1,
   },
+  
   gameOverOverlay: {
     position: "absolute",
     top: 0,
