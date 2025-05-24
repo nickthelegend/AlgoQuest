@@ -1503,8 +1503,8 @@ const styles = StyleSheet.create({
   battleScene: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 20,
+    justifyContent: "center",
+    paddingVertical: 15,
   },
   modernBattleTimer: {
     position: "absolute",
@@ -1584,26 +1584,23 @@ const styles = StyleSheet.create({
     transform: [{ scaleY: 0.3 }],
   },
   enemyBeastContainer: {
-    alignSelf: "flex-end", // 👈 Add this
+    alignSelf: "flex-end",
+    marginBottom: 20,
   },
   playerBeastContainer: {
-    marginTop: 20,
-    alignSelf: "flex-start", // 👈 Add this
+    marginTop: 40,
+    alignSelf: "flex-start",
     transform: [{ scaleX: -1 }],
   },
   modernVsBadge: {
     position: "absolute",
-    top: "50%",
-    left: "50%",
+    top: "45%",
+    left: "40%",
     width: 100,
     height: 100,
-    transform: [
-      { translateX: -50 }, // half of width
-      { translateY: -50 }, // half of height
-    ],
+    transform: [{ translateX: -50 }, { translateY: -50 }],
     zIndex: 30,
     borderRadius: 50,
-
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1681,10 +1678,10 @@ const styles = StyleSheet.create({
   },
   modernBattleLog: {
     position: "absolute",
-    top: "40%",
-    left: "50%",
+    top: "80%",
+    left: "40%",
     transform: [{ translateX: -150 }, { translateY: -60 }],
-    width: 300,
+    width: 400,
     zIndex: 20,
   },
   modernBattleLogCard: {
@@ -1730,46 +1727,50 @@ const styles = StyleSheet.create({
   modernMovesGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
+    justifyContent: "space-between",
     gap: 12,
   },
   modernMoveCard: {
-    flex: 1,
-    minWidth: "48%",
+    width: "48%",
     padding: 12,
     borderRadius: 16,
     borderWidth: 2,
-    overflow: "hidden",
-    minHeight: 120,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   disabledMove: {
-    opacity: 0.4,
+    opacity: 0.5,
   },
   modernMoveHeader: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    alignItems: "center",
+    marginBottom: 8,
   },
   modernMoveType: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.3)",
   },
   modernMoveTypeText: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   modernMoveName: {
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "bold",
     color: "#ffffff",
     marginBottom: 8,
   },
   modernMoveStats: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
   },
   modernMoveStat: {
     flexDirection: "row",
@@ -1779,11 +1780,12 @@ const styles = StyleSheet.create({
   modernMoveStatText: {
     fontSize: 14,
     fontWeight: "600",
+    color: "#ffffff",
   },
   modernBackButton: {
     position: "absolute",
-    top: 16,
-    left: 16,
+    top: 20,
+    right: 20,
     zIndex: 100,
   },
   modernBackButtonContent: {
@@ -1795,28 +1797,19 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.3)",
   },
+  vsImage: {
+    width: 60,
+    height: 60,
+  },
   statusEffectContainer: {
-    backgroundColor: "rgba(239, 68, 68, 0.3)",
-    paddingHorizontal: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 8,
     alignSelf: "flex-start",
   },
   statusEffectText: {
-    color: "#ffffff",
+    color: "#fff",
     fontSize: 12,
-    fontWeight: "600",
-  },
-  logcritical: {
-    color: "#FFD700",
-    fontWeight: "bold",
-  },
-  logenergy: {
-    color: "#06B6D4",
-  },
-  vsImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
   },
 })
