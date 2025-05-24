@@ -47,7 +47,7 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get("window")
 interface BeastAbility {
   id: string
   name: string
-  type: "attack" | "heal" | "buff" | "debuff"
+  type: "attack" | "heal" | "buff" | "debuff" | "energy"
   element: "fire" | "water" | "earth" | "wind" | "light" | "dark"
   power: number
   accuracy: number
@@ -336,7 +336,21 @@ export default function BattleArenaScreen() {
             speed: allocatedStats.speed,
             magic: allocatedStats.attack, // Use attack for magic
           },
-          abilities: playerAbilities,
+          abilities: [
+            ...playerAbilities,
+            // Universal energy restoration ability
+            {
+              id: "universal_energy_restore",
+              name: "Energy Focus",
+              type: "energy",
+              element: "light",
+              power: 45,
+              accuracy: 100,
+              energy_cost: 5,
+              cooldown: 0,
+              description: "Focus to restore 30-60 energy points",
+            },
+          ],
         }
         setPlayer1Beast(playerBeast)
 
@@ -383,7 +397,21 @@ export default function BattleArenaScreen() {
             speed: opponentAllocatedStats.speed,
             magic: opponentAllocatedStats.attack,
           },
-          abilities: opponentAbilities,
+          abilities: [
+            ...opponentAbilities,
+            // Universal energy restoration ability
+            {
+              id: "universal_energy_restore",
+              name: "Energy Focus",
+              type: "energy",
+              element: "light",
+              power: 45,
+              accuracy: 100,
+              energy_cost: 5,
+              cooldown: 0,
+              description: "Focus to restore 30-60 energy points",
+            },
+          ],
         }
         setPlayer2Beast(opponentBeast)
 
@@ -557,6 +585,29 @@ export default function BattleArenaScreen() {
         setPlayer2Beast((prev) => ({ ...prev, health: newHealth }))
         player2Health.value = withSpring((newHealth / attackerBeast.maxHealth) * 100)
       }
+    } else if (ability.type === "energy") {
+      // Energy restoration ability
+      const energyRestore = 30 + Math.floor(Math.random() * 31) // Random 30-60 energy
+      const newEnergy = Math.min(attackerBeast.maxEnergy, attackerBeast.energy + energyRestore)
+
+      if (attacker === "player1") {
+        setPlayer1Beast((prev) => ({ ...prev, energy: newEnergy }))
+        player1Energy.value = withSpring((newEnergy / attackerBeast.maxEnergy) * 100)
+      } else {
+        setPlayer2Beast((prev) => ({ ...prev, energy: newEnergy }))
+        player2Energy.value = withSpring((newEnergy / attackerBeast.maxEnergy) * 100)
+      }
+
+      // Add energy restore to battle log
+      setBattleLogs((prev) => [
+        {
+          id: Date.now().toString() + "_energy_restore",
+          message: `${attackerBeast.name} restored ${energyRestore} energy!`,
+          type: "system",
+          timestamp: Date.now(),
+        },
+        ...prev.slice(0, 4),
+      ])
     } else if (ability.type === "buff" || ability.type === "debuff") {
       // Status effects and buffs/debuffs
       applyStatusEffect(ability, ability.type === "buff" ? attackerBeast : defenderBeast, attacker)
@@ -632,6 +683,9 @@ export default function BattleArenaScreen() {
     let logMessage = ""
     if (ability.type === "heal") {
       logMessage = `${attackerBeast.name} used ${ability.name}! Restored ${healing} health!`
+    } else if (ability.type === "energy") {
+      // Energy restore message is already added above
+      logMessage = `${attackerBeast.name} used ${ability.name}!`
     } else if (ability.type === "buff" || ability.type === "debuff") {
       logMessage = `${attackerBeast.name} used ${ability.name}!`
     } else {
@@ -802,6 +856,8 @@ export default function BattleArenaScreen() {
         return "#7C3AED"
       case "debuff":
         return "#F59E0B"
+      case "energy":
+        return "#06B6D4"
     }
   }
 
@@ -1734,5 +1790,8 @@ const styles = StyleSheet.create({
   logcritical: {
     color: "#FFD700",
     fontWeight: "bold",
+  },
+  logenergy: {
+    color: "#06B6D4",
   },
 })
