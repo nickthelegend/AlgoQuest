@@ -266,7 +266,7 @@ export default function BattleArenaScreen() {
   const [turnNumber, setTurnNumber] = useState(1)
   const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null)
 
-  const { beastId, opponentId } = useLocalSearchParams()
+  const { beastId, opponentId, battleId: existingBattleId } = useLocalSearchParams()
   const [player1Beast, setPlayer1Beast] = useState<Beast | null>(null)
   const [player2Beast, setPlayer2Beast] = useState<Beast | null>(null)
   const [player1Name, setPlayer1Name] = useState("You")
@@ -365,6 +365,7 @@ export default function BattleArenaScreen() {
       }
 
       console.log("Selected Beast ID:", selectedBeastId) // Debug log
+      console.log("Params - existingBattleId:", existingBattleId, "opponentId:", opponentId)
 
       // Verify the beast exists and belongs to the user - use string ID directly
       const { data: beastCheck, error: beastError } = await supabase
@@ -388,11 +389,18 @@ export default function BattleArenaScreen() {
 
       // Create or join battle
       let battle: Battle
-      if (opponentId) {
-        // Join existing battle using battle code
+
+      if (existingBattleId) {
+        // Join existing battle using battle ID (player 2 joining from confirm screen)
+        console.log("Joining existing battle with ID:", existingBattleId)
+        battle = await joinExistingBattle(userId, selectedBeastId, existingBattleId as string)
+      } else if (opponentId) {
+        // Join existing battle using battle code (player 2 joining via code)
+        console.log("Joining battle by code:", opponentId)
         battle = await joinBattleByCode(userId, selectedBeastId, opponentId as string)
       } else {
-        // Create battle and wait for opponent
+        // Create battle and wait for opponent (player 1 creating new battle)
+        console.log("Creating new battle")
         battle = await createBattle(userId, selectedBeastId)
         setWaitingForOpponent(true)
       }
@@ -412,6 +420,70 @@ export default function BattleArenaScreen() {
       setError(`Failed to initialize battle: ${error.message || "Unknown error"}`)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const joinExistingBattle = async (userId: string, beastId: string, battleId: string): Promise<Battle> => {
+    // Get the existing battle
+    const { data: existingBattle, error: findError } = await supabase
+      .from("battles")
+      .select()
+      .eq("id", battleId)
+      .single()
+
+    if (findError || !existingBattle) {
+      throw new Error("Battle not found.")
+    }
+
+    // Check if this is the battle creator returning to their own battle
+    if (existingBattle.player1_id === userId) {
+      // This is the battle creator, just return the battle
+      return existingBattle
+    }
+
+    // Check if this player is already player2 in an active battle
+    if (existingBattle.player2_id === userId && existingBattle.status === "active") {
+      // Player 2 is rejoining an active battle they're already part of
+      return existingBattle
+    }
+
+    // This is player 2 joining the battle for the first time
+    if (existingBattle.status === "waiting") {
+      // Join the battle
+      const { data, error } = await supabase
+        .from("battles")
+        .update({
+          player2_id: userId,
+          player2_beast_id: beastId,
+          status: "active",
+        })
+        .eq("id", battleId)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    } else if (existingBattle.status === "active" && !existingBattle.player2_id) {
+      // Battle is active but missing player 2 (edge case)
+      const { data, error } = await supabase
+        .from("battles")
+        .update({
+          player2_id: userId,
+          player2_beast_id: beastId,
+        })
+        .eq("id", battleId)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    } else if (existingBattle.status === "completed") {
+      throw new Error("This battle has already ended.")
+    } else if (existingBattle.status === "abandoned") {
+      throw new Error("This battle has been cancelled.")
+    } else {
+      // Battle is active and already has both players, or some other state
+      return existingBattle
     }
   }
 
@@ -1737,6 +1809,12 @@ const battleStyles = StyleSheet.create({
   modernBattleLogCard: {
     padding: 12,
     borderRadius: 16,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  modernLogText: {
+    fontSize: 14,
+    marginBottom: 4,
     borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.2)",
   },
