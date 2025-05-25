@@ -7,11 +7,174 @@ import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
 import { Swords, Plus, Briefcase, ShoppingBag, Info, Users, Crown, Flame, Trophy } from "lucide-react-native"
 import { router } from "expo-router"
+import { useState, useEffect } from "react"
+import { supabase } from "@/lib/supabase"
+import * as SecureStore from "expo-secure-store"
 
 const { width } = Dimensions.get("window")
 const CARD_WIDTH = (width - 48) / 2
 
 export default function BattleBeastsScreen() {
+  const [recentBattles, setRecentBattles] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [currentUserId, setCurrentUserId] = useState(null)
+
+  // Get current user by wallet address
+  useEffect(() => {
+    const getCurrentUserByWallet = async () => {
+      console.log("=== Getting current user by wallet ===")
+      try {
+        // Get wallet address from AsyncStorage (adjust the key as needed)
+        const walletAddress = await SecureStore.getItemAsync("walletAddress")
+
+        console.log("Wallet address from storage:", walletAddress)
+
+        if (!walletAddress) {
+          console.log("No wallet address found")
+          setLoading(false)
+          return
+        }
+
+        // Find user ID by wallet address
+        const { data: userData, error: userError } = await supabase
+          .from("users")
+          .select("id")
+          .eq("wallet_address", walletAddress)
+          .single()
+
+        console.log("User lookup result:", { userData, userError, walletAddress })
+
+        if (userError) {
+          console.error("User lookup error:", userError)
+          setLoading(false)
+          return
+        }
+
+        if (userData) {
+          console.log("User found:", userData.id)
+          setCurrentUserId(userData.id)
+        } else {
+          console.log("No user found for wallet address:", walletAddress)
+          setLoading(false)
+        }
+      } catch (error) {
+        console.error("Error getting user by wallet:", error)
+        setLoading(false)
+      }
+    }
+    getCurrentUserByWallet()
+  }, [])
+
+  // Fetch recent battles
+  useEffect(() => {
+    const fetchRecentBattles = async () => {
+      console.log("=== Starting fetchRecentBattles ===")
+      console.log("Current user ID:", currentUserId)
+
+      if (!currentUserId) {
+        console.log("No current user ID, skipping fetch")
+        setLoading(false)
+        return
+      }
+
+      try {
+        console.log("Testing Supabase connection...")
+
+        // First test if Supabase is working at all
+        const { data: testData, error: testError } = await supabase.from("battles").select("count").limit(1)
+
+        console.log("Supabase test result:", { testData, testError })
+
+        if (testError) {
+          console.error("Supabase connection failed:", testError)
+          throw testError
+        }
+
+        console.log("Supabase connection successful, fetching user battles...")
+
+        // Now try to fetch user battles
+        const { data, error } = await supabase
+          .from("battles")
+          .select("*")
+          .or(`player1_id.eq.${currentUserId},player2_id.eq.${currentUserId}`)
+          .order("created_at", { ascending: false })
+          .limit(5)
+
+        console.log("User battles query result:", { data, error, currentUserId })
+
+        if (error) {
+          console.error("Battles query error:", error)
+          throw error
+        }
+
+        console.log("Found battles:", data?.length || 0)
+        setRecentBattles(data || [])
+
+        // If no battles found, let's check if there are ANY battles in the table
+        if (!data || data.length === 0) {
+          console.log("No user battles found, checking if any battles exist...")
+          const { data: allBattles, error: allError } = await supabase.from("battles").select("*").limit(5)
+
+          console.log("All battles in database:", { allBattles, allError })
+        }
+      } catch (error) {
+        console.error("Error in fetchRecentBattles:", error)
+        setRecentBattles([])
+      } finally {
+        console.log("=== Ending fetchRecentBattles ===")
+        setLoading(false)
+      }
+    }
+
+    fetchRecentBattles()
+  }, [currentUserId])
+
+  // Add timeout for loading state
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (loading) {
+        console.log("Loading timeout reached")
+        setLoading(false)
+        setRecentBattles([])
+      }
+    }, 10000) // 10 second timeout
+
+    return () => clearTimeout(timeout)
+  }, [loading])
+
+  // Helper function to format time ago
+  const formatTimeAgo = (dateString) => {
+    const now = new Date()
+    const battleDate = new Date(dateString)
+    const diffInMinutes = Math.floor((now - battleDate) / (1000 * 60))
+
+    if (diffInMinutes < 60) {
+      return `${diffInMinutes} minutes ago`
+    } else if (diffInMinutes < 1440) {
+      const hours = Math.floor(diffInMinutes / 60)
+      return `${hours} hour${hours > 1 ? "s" : ""} ago`
+    } else {
+      const days = Math.floor(diffInMinutes / 1440)
+      return `${days} day${days > 1 ? "s" : ""} ago`
+    }
+  }
+
+  // Helper function to get battle result
+  const getBattleResult = (battle) => {
+    if (!battle.winner_id) return { text: "Draw", color: "#FFA500" }
+    const isWinner = battle.winner_id === currentUserId
+    return {
+      text: isWinner ? "Victory" : "Defeat",
+      color: isWinner ? "#4ADE80" : "#EF4444",
+    }
+  }
+
+  // Helper function to get opponent info
+  const getOpponentInfo = (battle) => {
+    const isPlayer1 = battle.player1_id === currentUserId
+    return isPlayer1 ? battle.player2 : battle.player1
+  }
+
   const navigateToGameInfo = () => {
     router.push("/game-info")
   }
@@ -27,6 +190,43 @@ export default function BattleBeastsScreen() {
   const navigateToBeastCreation = () => {
     router.push("/(game)/beast-creation")
   }
+
+  const createTestBattle = async () => {
+    if (!currentUserId) {
+      console.log("No user ID for test battle")
+      return
+    }
+
+    try {
+      // Create a test battle with a dummy opponent
+      const { data, error } = await supabase
+        .from("battles")
+        .insert({
+          player1_id: currentUserId,
+          player2_id: currentUserId, // Using same user as opponent for test
+          winner_id: currentUserId,
+          battle_status: "completed",
+        })
+        .select()
+
+      console.log("Test battle created:", { data, error })
+
+      if (!error) {
+        // Refresh battles
+        const { data: battles } = await supabase
+          .from("battles")
+          .select("*")
+          .or(`player1_id.eq.${currentUserId},player2_id.eq.${currentUserId}`)
+          .order("created_at", { ascending: false })
+          .limit(5)
+
+        setRecentBattles(battles || [])
+      }
+    } catch (error) {
+      console.error("Error creating test battle:", error)
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -138,34 +338,60 @@ export default function BattleBeastsScreen() {
 
         {/* Recent Battles */}
         <Animated.View entering={FadeInDown.delay(700)} style={styles.recentBattles}>
-          <Text style={styles.sectionTitle}>Recent Battles</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={styles.sectionTitle}>Recent Battles</Text>
+            <TouchableOpacity
+              onPress={createTestBattle}
+              style={{ backgroundColor: "#7C3AED", padding: 8, borderRadius: 8 }}
+            >
+              <Text style={{ color: "white", fontSize: 12 }}>Test Battle</Text>
+            </TouchableOpacity>
+          </View>
           <BlurView intensity={40} tint="dark" style={styles.battlesList}>
             <LinearGradient colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]} style={StyleSheet.absoluteFill} />
-            {[1, 2, 3].map((index) => (
-              <View key={index} style={styles.battleItem}>
-                <View style={styles.battleParticipants}>
-                  <Image
-                    source={{
-                      uri: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
-                    }}
-                    style={styles.participantAvatar}
-                  />
-                  <View style={styles.versusContainer}>
-                    <Swords size={16} color="#7C3AED" />
-                  </View>
-                  <Image
-                    source={{
-                      uri: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7B2B6DD035-1075-4F47-B2F1-DABE23BB2ECB%7D-45Wli9AJqOF6pzxNlZ6Axi54cw1bDu.png",
-                    }}
-                    style={styles.participantAvatar}
-                  />
-                </View>
-                <View style={styles.battleInfo}>
-                  <Text style={styles.battleResult}>Victory</Text>
-                  <Text style={styles.battleTime}>2 hours ago</Text>
-                </View>
+            {loading ? (
+              <View style={styles.battleItem}>
+                <Text style={[styles.battleTime, { textAlign: "center" }]}>Loading battles...</Text>
               </View>
-            ))}
+            ) : recentBattles.length === 0 ? (
+              <View style={styles.battleItem}>
+                <Text style={[styles.battleTime, { textAlign: "center" }]}>No battles yet</Text>
+              </View>
+            ) : (
+              recentBattles.map((battle) => {
+                const isWinner = battle.winner_id === currentUserId
+                const result = {
+                  text: battle.winner_id ? (isWinner ? "Victory" : "Defeat") : "Draw",
+                  color: battle.winner_id ? (isWinner ? "#4ADE80" : "#EF4444") : "#FFA500",
+                }
+
+                return (
+                  <View key={battle.id} style={styles.battleItem}>
+                    <View style={styles.battleParticipants}>
+                      <Image
+                        source={{
+                          uri: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7BC5DA1ABA-D239-47BF-86A4-7F62F953B61C%7D-oDh5OOGSt6RLj6h8lnARTFRGEVF7dC.png",
+                        }}
+                        style={styles.participantAvatar}
+                      />
+                      <View style={styles.versusContainer}>
+                        <Swords size={16} color="#7C3AED" />
+                      </View>
+                      <Image
+                        source={{
+                          uri: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/%7B2B6DD035-1075-4F47-B2F1-DABE23BB2ECB%7D-45Wli9AJqOF6pzxNlZ6Axi54cw1bDu.png",
+                        }}
+                        style={styles.participantAvatar}
+                      />
+                    </View>
+                    <View style={styles.battleInfo}>
+                      <Text style={[styles.battleResult, { color: result.color }]}>{result.text}</Text>
+                      <Text style={styles.battleTime}>{formatTimeAgo(battle.created_at)}</Text>
+                    </View>
+                  </View>
+                )
+              })
+            )}
           </BlurView>
         </Animated.View>
       </ScrollView>
