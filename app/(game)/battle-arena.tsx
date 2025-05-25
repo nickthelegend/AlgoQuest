@@ -175,6 +175,9 @@ export default function BattleArenaScreen() {
   const [winner, setWinner] = useState<"player1" | "player2" | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Add this after the other state declarations
+  const [logCounter, setLogCounter] = useState(0)
+
   // Real-time multiplayer states
   const [battleId, setBattleId] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string>("")
@@ -185,16 +188,32 @@ export default function BattleArenaScreen() {
   const [realtimeChannel, setRealtimeChannel] = useState<RealtimeChannel | null>(null)
 
   const { beastId, opponentId, battleId: existingBattleId } = useLocalSearchParams()
-  const [player1Beast, setPlayer1Beast] = useState<Beast | null>(null)
-  const [player2Beast, setPlayer2Beast] = useState<Beast | null>(null)
-  const [player1Name, setPlayer1Name] = useState("You")
-  const [player2Name, setPlayer2Name] = useState("Opponent")
+
+  // Replace these lines:
+  // const [player1Beast, setPlayer1Beast] = useState<Beast | null>(null)
+  // const [player2Beast, setPlayer2Beast] = useState<Beast | null>(null)
+  // const [player1Name, setPlayer1Name] = useState("You")
+  // const [player2Name, setPlayer2Name] = useState("Opponent")
 
   // Animation values
-  const player1Health = useSharedValue(100)
-  const player2Health = useSharedValue(100)
-  const player1Energy = useSharedValue(100)
-  const player2Energy = useSharedValue(100)
+  // const player1Health = useSharedValue(100)
+  // const player2Health = useSharedValue(100)
+  // const player1Energy = useSharedValue(100)
+  // const player2Energy = useSharedValue(100)
+
+  // With these perspective-based variables:
+  const [myBeast, setMyBeast] = useState<Beast | null>(null)
+  const [opponentBeast, setOpponentBeast] = useState<Beast | null>(null)
+  const [myName, setMyName] = useState("You")
+  const [opponentName, setOpponentName] = useState("Opponent")
+
+  // Animation values (perspective-based)
+  const myHealth = useSharedValue(100)
+  const opponentHealth = useSharedValue(100)
+  const myEnergy = useSharedValue(100)
+  const opponentEnergy = useSharedValue(100)
+
+  // Animation values
   const shakeValue = useSharedValue(0)
   const flashValue = useSharedValue(0)
   const battleFieldScale = useSharedValue(1)
@@ -254,9 +273,10 @@ export default function BattleArenaScreen() {
 
     // Add status message to battle log
     if (statusMessage) {
+      setLogCounter((prev) => prev + 1)
       setBattleLogs((prev) => [
         {
-          id: Date.now().toString() + "_status",
+          id: `${Date.now()}_${logCounter}_status`,
           message: statusMessage,
           type: "status" as const,
           timestamp: Date.now(),
@@ -301,6 +321,84 @@ export default function BattleArenaScreen() {
       handleTimeUp()
     }
   }, [battleStarted, turnTime, gameOver, waitingForOpponent])
+
+  // Replace the loadBattleData function with:
+  const loadBattleData = async (battle: Battle, userId: string) => {
+    try {
+      // Load player 1 beast
+      const { data: player1BeastData, error: p1Error } = await supabase
+        .from("beasts")
+        .select("*, users!inner(wallet_address)")
+        .eq("id", battle.player1_beast_id)
+        .single()
+
+      if (p1Error) throw p1Error
+
+      // Load player 2 beast (if exists)
+      let player2BeastData = null
+      if (battle.player2_beast_id) {
+        const { data, error } = await supabase
+          .from("beasts")
+          .select("*, users!inner(wallet_address)")
+          .eq("id", battle.player2_beast_id)
+          .single()
+
+        if (error) throw error
+        player2BeastData = data
+      }
+
+      // Process beast data
+      const player1Beast = await processBeastData(player1BeastData)
+      const player2Beast = player2BeastData ? await processBeastData(player2BeastData) : null
+
+      // Set beast data based on user perspective (always "my" beast at bottom, "opponent" at top)
+      if (battle.player1_id === userId) {
+        // I am player1, so my beast is player1Beast, opponent is player2Beast
+        setMyBeast(player1Beast)
+        setOpponentBeast(player2Beast)
+        setMyName("You")
+        setOpponentName(player2Beast ? truncateWalletAddress(player2BeastData.users.wallet_address) : "Waiting...")
+
+        // Initialize health bars for my perspective
+        if (player1Beast) {
+          myHealth.value = withSpring((player1Beast.health / player1Beast.maxHealth) * 100)
+          myEnergy.value = withSpring((player1Beast.energy / player1Beast.maxEnergy) * 100)
+        }
+        if (player2Beast) {
+          opponentHealth.value = withSpring((player2Beast.health / player2Beast.maxHealth) * 100)
+          opponentEnergy.value = withSpring((player2Beast.energy / player2Beast.maxEnergy) * 100)
+        }
+      } else {
+        // I am player2, so my beast is player2Beast, opponent is player1Beast
+        setMyBeast(player2Beast)
+        setOpponentBeast(player1Beast)
+        setMyName("You")
+        setOpponentName(player1Beast ? truncateWalletAddress(player1BeastData.users.wallet_address) : "Waiting...")
+
+        // Initialize health bars for my perspective
+        if (player2Beast) {
+          myHealth.value = withSpring((player2Beast.health / player2Beast.maxHealth) * 100)
+          myEnergy.value = withSpring((player2Beast.energy / player2Beast.maxEnergy) * 100)
+        }
+        if (player1Beast) {
+          opponentHealth.value = withSpring((player1Beast.health / player1Beast.maxHealth) * 100)
+          opponentEnergy.value = withSpring((player1Beast.energy / player1Beast.maxEnergy) * 100)
+        }
+      }
+
+      // Start battle if both players are ready
+      if (battle.status === "active" && player1Beast && player2Beast) {
+        setBattleStarted(true)
+        setWaitingForOpponent(false)
+        setCurrentTurn(battle.current_turn)
+        setTurnNumber(battle.turn_number)
+        setTurnTime(battle.turn_time_remaining)
+      }
+    } catch (error) {
+      console.error("Error loading battle data:", error)
+      throw error
+    }
+  }
 
   const initializeBattle = async () => {
     try {
@@ -552,61 +650,6 @@ export default function BattleArenaScreen() {
     return data
   }
 
-  const loadBattleData = async (battle: Battle, userId: string) => {
-    try {
-      // Load player 1 beast
-      const { data: player1BeastData, error: p1Error } = await supabase
-        .from("beasts")
-        .select("*, users!inner(wallet_address)")
-        .eq("id", battle.player1_beast_id)
-        .single()
-
-      if (p1Error) throw p1Error
-
-      // Load player 2 beast (if exists)
-      let player2BeastData = null
-      if (battle.player2_beast_id) {
-        const { data, error } = await supabase
-          .from("beasts")
-          .select("*, users!inner(wallet_address)")
-          .eq("id", battle.player2_beast_id)
-          .single()
-
-        if (error) throw error
-        player2BeastData = data
-      }
-
-      // Process beast data
-      const player1Beast = await processBeastData(player1BeastData)
-      const player2Beast = player2BeastData ? await processBeastData(player2BeastData) : null
-
-      // Set beast data based on user position
-      if (battle.player1_id === userId) {
-        setPlayer1Beast(player1Beast)
-        setPlayer2Beast(player2Beast)
-        setPlayer1Name("You")
-        setPlayer2Name(player2Beast ? truncateWalletAddress(player2BeastData.users.wallet_address) : "Waiting...")
-      } else {
-        setPlayer1Beast(player2Beast)
-        setPlayer2Beast(player1Beast)
-        setPlayer1Name(player1Beast ? truncateWalletAddress(player1BeastData.users.wallet_address) : "Waiting...")
-        setPlayer2Name("You")
-      }
-
-      // Start battle if both players are ready
-      if (battle.status === "active" && player1Beast && player2Beast) {
-        setBattleStarted(true)
-        setWaitingForOpponent(false)
-        setCurrentTurn(battle.current_turn)
-        setTurnNumber(battle.turn_number)
-        setTurnTime(battle.turn_time_remaining)
-      }
-    } catch (error) {
-      console.error("Error loading battle data:", error)
-      throw error
-    }
-  }
-
   const processBeastData = async (beastData: any): Promise<Beast> => {
     const metadata = beastData.metadata
     const abilityIds = metadata.abilities || []
@@ -745,6 +788,11 @@ export default function BattleArenaScreen() {
   const handleOpponentMove = (move: any) => {
     if (move.player_id === currentUserId) return // Ignore own moves
 
+    console.log("Received opponent move:", move)
+    console.log("Current user is player1:", isPlayer1)
+    console.log("Move player_id:", move.player_id)
+    console.log("Current user ID:", currentUserId)
+
     // Apply opponent's move
     applyMoveToGame(move, false)
 
@@ -754,6 +802,7 @@ export default function BattleArenaScreen() {
     setTurnNumber((prev) => prev + 1)
   }
 
+  // Replace the applyMoveToGame function with:
   const applyMoveToGame = (move: any, isOwnMove: boolean) => {
     const {
       ability,
@@ -768,7 +817,15 @@ export default function BattleArenaScreen() {
       attackerEnergy,
     } = move
 
-    // Enhanced animations
+    console.log(`[${isOwnMove ? "Own" : "Opponent"} Move] Applying move:`, {
+      damage,
+      targetHealth,
+      attackerHealth,
+      myBeastCurrentHealth: myBeast?.health,
+      opponentBeastCurrentHealth: opponentBeast?.health,
+    })
+
+    // Enhanced animations (same as before)
     if (isCritical) {
       // Critical hit animation
       shakeValue.value = withSequence(
@@ -800,59 +857,80 @@ export default function BattleArenaScreen() {
       withTiming(1, { duration: 100 }),
     )
 
-    // Update beast states based on move
+    // Update beast states and bars based on move
     if (isOwnMove) {
-      // Update opponent's beast (target)
-      if (damage && targetHealth !== undefined) {
-        if (isPlayer1) {
-          setPlayer2Beast((prev) => (prev ? { ...prev, health: targetHealth } : null))
-          player2Health.value = withSpring((targetHealth / (player2Beast?.maxHealth || 1)) * 100)
-        } else {
-          setPlayer1Beast((prev) => (prev ? { ...prev, health: targetHealth } : null))
-          player1Health.value = withSpring((targetHealth / (player1Beast?.maxHealth || 1)) * 100)
-        }
+      // This is my move - I'm the attacker, opponent is the target
+
+      // Update opponent's health if damage was dealt
+      if (damage && targetHealth !== undefined && opponentBeast) {
+        const opponentMaxHealth = opponentBeast.maxHealth
+        setOpponentBeast((prev) => (prev ? { ...prev, health: targetHealth } : null))
+        opponentHealth.value = withSpring((targetHealth / opponentMaxHealth) * 100)
+        console.log(
+          `[Own Move] Updated opponent health: ${targetHealth}/${opponentMaxHealth} = ${(targetHealth / opponentMaxHealth) * 100}%`,
+        )
       }
 
-      // Update own beast (attacker)
-      if (attackerHealth !== undefined && attackerEnergy !== undefined) {
-        if (isPlayer1) {
-          setPlayer1Beast((prev) => (prev ? { ...prev, health: attackerHealth, energy: attackerEnergy } : null))
-          player1Health.value = withSpring((attackerHealth / (player1Beast?.maxHealth || 1)) * 100)
-          player1Energy.value = withSpring((attackerEnergy / (player1Beast?.maxEnergy || 1)) * 100)
-        } else {
-          setPlayer2Beast((prev) => (prev ? { ...prev, health: attackerHealth, energy: attackerEnergy } : null))
-          player2Health.value = withSpring((attackerHealth / (player2Beast?.maxHealth || 1)) * 100)
-          player2Energy.value = withSpring((attackerEnergy / (player2Beast?.maxEnergy || 1)) * 100)
-        }
+      // Update my own beast's health and energy
+      if (attackerHealth !== undefined && attackerEnergy !== undefined && myBeast) {
+        const myMaxHealth = myBeast.maxHealth
+        const myMaxEnergy = myBeast.maxEnergy
+        setMyBeast((prev) => (prev ? { ...prev, health: attackerHealth, energy: attackerEnergy } : null))
+        myHealth.value = withSpring((attackerHealth / myMaxHealth) * 100)
+        myEnergy.value = withSpring((attackerEnergy / myMaxEnergy) * 100)
+        console.log(
+          `[Own Move] Updated my health: ${attackerHealth}/${myMaxHealth} = ${(attackerHealth / myMaxHealth) * 100}%`,
+        )
       }
     } else {
-      // Apply opponent's move (reverse perspective)
-      if (damage && targetHealth !== undefined) {
-        if (isPlayer1) {
-          setPlayer1Beast((prev) => (prev ? { ...prev, health: targetHealth } : null))
-          player1Health.value = withSpring((targetHealth / (player1Beast?.maxHealth || 1)) * 100)
-        } else {
-          setPlayer2Beast((prev) => (prev ? { ...prev, health: targetHealth } : null))
-          player2Health.value = withSpring((targetHealth / (player2Beast?.maxHealth || 1)) * 100)
-        }
+      // This is opponent's move - opponent is the attacker, I'm the target
+
+      // Update my health if I was damaged
+      if (damage && targetHealth !== undefined && myBeast) {
+        const myMaxHealth = myBeast.maxHealth
+        setMyBeast((prev) => (prev ? { ...prev, health: targetHealth } : null))
+        myHealth.value = withSpring((targetHealth / myMaxHealth) * 100)
+        console.log(
+          `[Opponent Move] Updated my health: ${targetHealth}/${myMaxHealth} = ${(targetHealth / myMaxHealth) * 100}%`,
+        )
       }
 
-      if (attackerHealth !== undefined && attackerEnergy !== undefined) {
-        if (isPlayer1) {
-          setPlayer2Beast((prev) => (prev ? { ...prev, health: attackerHealth, energy: attackerEnergy } : null))
-          player2Health.value = withSpring((attackerHealth / (player2Beast?.maxHealth || 1)) * 100)
-          player2Energy.value = withSpring((attackerEnergy / (player2Beast?.maxEnergy || 1)) * 100)
-        } else {
-          setPlayer1Beast((prev) => (prev ? { ...prev, health: attackerHealth, energy: attackerEnergy } : null))
-          player1Health.value = withSpring((attackerHealth / (player1Beast?.maxHealth || 1)) * 100)
-          player1Energy.value = withSpring((attackerEnergy / (player1Beast?.maxEnergy || 1)) * 100)
-        }
+      // Update opponent's health and energy (the attacker)
+      if (attackerHealth !== undefined && attackerEnergy !== undefined && opponentBeast) {
+        const opponentMaxHealth = opponentBeast.maxHealth
+        const opponentMaxEnergy = opponentBeast.maxEnergy
+        setOpponentBeast((prev) => (prev ? { ...prev, health: attackerHealth, energy: attackerEnergy } : null))
+        opponentHealth.value = withSpring((attackerHealth / opponentMaxHealth) * 100)
+        opponentEnergy.value = withSpring((attackerEnergy / opponentMaxEnergy) * 100)
+        console.log(
+          `[Opponent Move] Updated opponent health: ${attackerHealth}/${opponentMaxHealth} = ${(attackerHealth / opponentMaxHealth) * 100}%`,
+        )
+      }
+
+      // Handle healing moves where I'm the target but getting healed
+      if (healing && targetHealth !== undefined && myBeast) {
+        const myMaxHealth = myBeast.maxHealth
+        setMyBeast((prev) => (prev ? { ...prev, health: targetHealth } : null))
+        myHealth.value = withSpring((targetHealth / myMaxHealth) * 100)
+        console.log(
+          `[Opponent Move - Healing] Updated my health: ${targetHealth}/${myMaxHealth} = ${(targetHealth / myMaxHealth) * 100}%`,
+        )
+      }
+
+      // Handle energy restore moves where I'm the target
+      if (energyRestore && targetEnergy !== undefined && myBeast) {
+        const myMaxEnergy = myBeast.maxEnergy
+        setMyBeast((prev) => (prev ? { ...prev, energy: targetEnergy } : null))
+        myEnergy.value = withSpring((targetEnergy / myMaxEnergy) * 100)
+        console.log(
+          `[Opponent Move - Energy] Updated my energy: ${targetEnergy}/${myMaxEnergy} = ${(targetEnergy / myMaxEnergy) * 100}%`,
+        )
       }
     }
 
     // Add to battle log
     let logMessage = ""
-    const attackerName = isOwnMove ? (isPlayer1 ? player1Name : player2Name) : isPlayer1 ? player2Name : player1Name
+    const attackerName = isOwnMove ? myName : opponentName
 
     if (ability.type === "heal") {
       logMessage = `${attackerName} used ${ability.name}! Restored ${healing} health!`
@@ -866,9 +944,10 @@ export default function BattleArenaScreen() {
       if (effectiveness && effectiveness < 1) logMessage += " It's not very effective..."
     }
 
+    setLogCounter((prev) => prev + 1)
     setBattleLogs((prev) => [
       {
-        id: Date.now().toString(),
+        id: `${Date.now()}_${logCounter}`,
         message: logMessage,
         type: isCritical ? "system" : ability.type === "heal" ? "heal" : "attack",
         timestamp: Date.now(),
@@ -881,8 +960,18 @@ export default function BattleArenaScreen() {
 
     // Check for game over
     if (targetHealth !== undefined && targetHealth <= 0) {
-      endBattle(isOwnMove ? currentUserId : isPlayer1 ? player2Beast?.id : player1Beast?.id)
+      endBattle(isOwnMove ? currentUserId : opponentBeast?.id)
     }
+
+    // Debug health bars after update
+    setTimeout(() => {
+      console.log(`[After Move] Current health bars:`, {
+        myHealthValue: myHealth.value,
+        opponentHealthValue: opponentHealth.value,
+        myBeastHealth: myBeast?.health,
+        opponentBeastHealth: opponentBeast?.health,
+      })
+    }, 100)
   }
 
   const broadcastMove = async (ability: BeastAbility, moveData: any) => {
@@ -988,9 +1077,10 @@ export default function BattleArenaScreen() {
   }
 
   const handleTimeUp = () => {
+    setLogCounter((prev) => prev + 1)
     setBattleLogs((prev) => [
       {
-        id: Date.now().toString(),
+        id: `${Date.now()}_${logCounter}`,
         message: `${isMyTurn() ? "You" : "Opponent"} ran out of time!`,
         type: "system",
         timestamp: Date.now(),
@@ -1025,19 +1115,21 @@ export default function BattleArenaScreen() {
     }
   }
 
+  // Replace the handleAttack function with:
   const handleAttack = async (ability: BeastAbility) => {
     if (gameOver || !isMyTurn() || waitingForOpponent) return
 
-    const attackerBeast = isPlayer1 ? player1Beast : player2Beast
-    const defenderBeast = isPlayer1 ? player2Beast : player1Beast
+    const attackerBeast = myBeast
+    const defenderBeast = opponentBeast
 
     if (!attackerBeast || !defenderBeast) return
 
     // Check if attacker is frozen
     if (attackerBeast.status?.type === "freeze") {
+      setLogCounter((prev) => prev + 1)
       setBattleLogs((prev) => [
         {
-          id: Date.now().toString(),
+          id: `${Date.now()}_${logCounter}`,
           message: `${attackerBeast.name} is frozen and cannot attack!`,
           type: "status",
           timestamp: Date.now(),
@@ -1131,6 +1223,22 @@ export default function BattleArenaScreen() {
   }
 
   // Animation styles
+  const myHealthStyle = useAnimatedStyle(() => ({
+    width: `${myHealth.value}%`,
+  }))
+
+  const opponentHealthStyle = useAnimatedStyle(() => ({
+    width: `${opponentHealth.value}%`,
+  }))
+
+  const myEnergyStyle = useAnimatedStyle(() => ({
+    width: `${myEnergy.value}%`,
+  }))
+
+  const opponentEnergyStyle = useAnimatedStyle(() => ({
+    width: `${opponentEnergy.value}%`,
+  }))
+
   const shakeAnimation = useAnimatedStyle(() => ({
     transform: [{ translateX: shakeValue.value }],
   }))
@@ -1141,22 +1249,6 @@ export default function BattleArenaScreen() {
 
   const battleFieldAnimation = useAnimatedStyle(() => ({
     transform: [{ scale: battleFieldScale.value }],
-  }))
-
-  const player1HealthStyle = useAnimatedStyle(() => ({
-    width: `${player1Health.value}%`,
-  }))
-
-  const player2HealthStyle = useAnimatedStyle(() => ({
-    width: `${player2Health.value}%`,
-  }))
-
-  const player1EnergyStyle = useAnimatedStyle(() => ({
-    width: `${player1Energy.value}%`,
-  }))
-
-  const player2EnergyStyle = useAnimatedStyle(() => ({
-    width: `${player2Energy.value}%`,
   }))
 
   // Helper functions for element icons and colors
@@ -1236,7 +1328,7 @@ export default function BattleArenaScreen() {
   }
 
   // Loading screen
-  if (isLoading || !player1Beast || (waitingForOpponent && !player2Beast)) {
+  if (isLoading || !myBeast || (waitingForOpponent && !opponentBeast)) {
     return (
       <SafeAreaView style={styles.container}>
         <LinearGradient
@@ -1353,11 +1445,12 @@ export default function BattleArenaScreen() {
 
       {/* Battle Arena */}
       <Animated.View style={[styles.arenaContainer, battleFieldAnimation]}>
-        {/* Enhanced Enemy Stats (Top) */}
+        {/* Replace the enemyStats section with: */}
+        {/* Enhanced Opponent Stats (Top) */}
         <Animated.View entering={SlideInDown.delay(200)} style={styles.enemyStats}>
           <BlurView intensity={60} tint="dark" style={styles.modernStatsCard}>
             <LinearGradient
-              colors={[`${getElementColor(player2Beast.element)}40`, "rgba(0, 0, 0, 0.8)"]}
+              colors={[`${getElementColor(opponentBeast.element)}40`, "rgba(0, 0, 0, 0.8)"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={StyleSheet.absoluteFill}
@@ -1365,21 +1458,21 @@ export default function BattleArenaScreen() {
             <View style={styles.statsHeader}>
               <View style={styles.playerInfo}>
                 <View style={styles.playerNameContainer}>
-                  <Text style={styles.playerName}>{player2Name}</Text>
+                  <Text style={styles.playerName}>{opponentName}</Text>
                   <View style={styles.modernRankBadge}>
                     <Crown size={14} color="#FFD700" />
-                    <Text style={styles.rankText}>#{player2Beast.level}</Text>
+                    <Text style={styles.rankText}>#{opponentBeast.level}</Text>
                   </View>
                 </View>
                 <View style={styles.beastInfo}>
-                  <Text style={styles.beastName}>{player2Beast.name}</Text>
+                  <Text style={styles.beastName}>{opponentBeast.name}</Text>
                   <View style={styles.modernElementBadge}>
-                    {createElement(getElementIcon(player2Beast.element), {
+                    {createElement(getElementIcon(opponentBeast.element), {
                       size: 14,
-                      color: getElementColor(player2Beast.element),
+                      color: getElementColor(opponentBeast.element),
                     })}
-                    <Text style={[styles.elementText, { color: getElementColor(player2Beast.element) }]}>
-                      {player2Beast.element}
+                    <Text style={[styles.elementText, { color: getElementColor(opponentBeast.element) }]}>
+                      {opponentBeast.element}
                     </Text>
                   </View>
                 </View>
@@ -1390,22 +1483,22 @@ export default function BattleArenaScreen() {
               <View style={styles.modernStatItem}>
                 <Heart size={18} color="#EF4444" />
                 <View style={styles.modernStatBarContainer}>
-                  <Animated.View style={[styles.modernStatBar, player2HealthStyle, { backgroundColor: "#EF4444" }]} />
-                  <Text style={styles.modernStatText}>{Math.round(player2Beast.health) || 0}</Text>
+                  <Animated.View style={[styles.modernStatBar, opponentHealthStyle, { backgroundColor: "#EF4444" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(opponentBeast.health) || 0}</Text>
                 </View>
               </View>
 
               <View style={styles.modernStatItem}>
                 <Zap size={18} color="#7C3AED" />
                 <View style={styles.modernStatBarContainer}>
-                  <Animated.View style={[styles.modernStatBar, player2EnergyStyle, { backgroundColor: "#7C3AED" }]} />
-                  <Text style={styles.modernStatText}>{Math.round(player2Beast.energy)}</Text>
+                  <Animated.View style={[styles.modernStatBar, opponentEnergyStyle, { backgroundColor: "#7C3AED" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(opponentBeast.energy)}</Text>
                 </View>
               </View>
-              {player2Beast.status && (
+              {opponentBeast.status && (
                 <View style={styles.statusEffectContainer}>
                   <Text style={styles.statusEffectText}>
-                    {player2Beast.status.type}: {player2Beast.status.duration} turns
+                    {opponentBeast.status.type}: {opponentBeast.status.duration} turns
                   </Text>
                 </View>
               )}
@@ -1448,47 +1541,49 @@ export default function BattleArenaScreen() {
             </Animated.View>
           )}
 
-          {/* Enhanced Enemy Beast */}
+          {/* Replace the enemy beast section with: */}
+          {/* Enhanced Opponent Beast */}
           <Animated.View
             ref={player2BeastRef}
             entering={SlideInLeft.delay(400)}
             style={[styles.modernBeastContainer, styles.enemyBeastContainer]}
           >
             <LinearGradient
-              colors={[`${getElementColor(player2Beast.element)}60`, "transparent"]}
+              colors={[`${getElementColor(opponentBeast.element)}60`, "transparent"]}
               style={styles.modernBeastGlow}
               start={{ x: 0.5, y: 0 }}
               end={{ x: 0.5, y: 1 }}
             />
             <View style={styles.beastImageContainer}>
               <Image
-                source={{ uri: getImageUrl(player2Beast.image_url) }}
+                source={{ uri: getImageUrl(opponentBeast.image_url) }}
                 style={styles.modernBeastImage}
                 resizeMode="contain"
-                onError={(e) => console.log("Error loading enemy beast image:", e.nativeEvent.error)}
+                onError={(e) => console.log("Error loading opponent beast image:", e.nativeEvent.error)}
               />
             </View>
             <View style={styles.beastShadow} />
           </Animated.View>
 
-          {/* Enhanced Player Beast */}
+          {/* Replace the player beast section with: */}
+          {/* Enhanced My Beast */}
           <Animated.View
             ref={player1BeastRef}
             entering={SlideInRight.delay(400)}
             style={[styles.modernBeastContainer, styles.playerBeastContainer]}
           >
             <LinearGradient
-              colors={[`${getElementColor(player1Beast.element)}60`, "transparent"]}
+              colors={[`${getElementColor(myBeast.element)}60`, "transparent"]}
               style={styles.modernBeastGlow}
               start={{ x: 0.5, y: 0 }}
               end={{ x: 0.5, y: 1 }}
             />
             <View style={styles.beastImageContainer}>
               <Image
-                source={{ uri: getImageUrl(player1Beast.image_url) }}
+                source={{ uri: getImageUrl(myBeast.image_url) }}
                 style={styles.modernBeastImage}
                 resizeMode="contain"
-                onError={(e) => console.log("Error loading player beast image:", e.nativeEvent.error)}
+                onError={(e) => console.log("Error loading my beast image:", e.nativeEvent.error)}
               />
             </View>
             <View style={styles.beastShadow} />
@@ -1526,8 +1621,8 @@ export default function BattleArenaScreen() {
                 <Text style={styles.modernGameOverTitle}>{winner === "player1" ? "🏆 VICTORY!" : "💀 DEFEAT!"}</Text>
                 <Text style={styles.modernGameOverText}>
                   {winner === "player1"
-                    ? `Your ${player1Beast.name} has triumphed over ${player2Beast.name}!`
-                    : `Your ${player1Beast.name} has fallen to ${player2Beast.name}!`}
+                    ? `Your ${myBeast.name} has triumphed over ${opponentBeast.name}!`
+                    : `Your ${myBeast.name} has fallen to ${opponentBeast.name}!`}
                 </Text>
                 <TouchableOpacity style={styles.modernExitButton} onPress={() => router.back()}>
                   <Text style={styles.modernExitButtonText}>Return to Map</Text>
@@ -1537,11 +1632,12 @@ export default function BattleArenaScreen() {
           )}
         </View>
 
-        {/* Enhanced Player Stats (Bottom) */}
+        {/* Replace the playerStats section with: */}
+        {/* Enhanced My Stats (Bottom) */}
         <Animated.View entering={SlideInUp.delay(200)} style={styles.playerStats}>
           <BlurView intensity={60} tint="dark" style={styles.modernStatsCard}>
             <LinearGradient
-              colors={[`${getElementColor(player1Beast.element)}40`, "rgba(0, 0, 0, 0.8)"]}
+              colors={[`${getElementColor(myBeast.element)}40`, "rgba(0, 0, 0, 0.8)"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={StyleSheet.absoluteFill}
@@ -1549,21 +1645,21 @@ export default function BattleArenaScreen() {
             <View style={styles.statsHeader}>
               <View style={styles.playerInfo}>
                 <View style={styles.playerNameContainer}>
-                  <Text style={styles.playerName}>{player1Name}</Text>
+                  <Text style={styles.playerName}>{myName}</Text>
                   <View style={styles.modernRankBadge}>
                     <Crown size={14} color="#FFD700" />
-                    <Text style={styles.rankText}>#{player1Beast.level}</Text>
+                    <Text style={styles.rankText}>#{myBeast.level}</Text>
                   </View>
                 </View>
                 <View style={styles.beastInfo}>
-                  <Text style={styles.beastName}>{player1Beast.name}</Text>
+                  <Text style={styles.beastName}>{myBeast.name}</Text>
                   <View style={styles.modernElementBadge}>
-                    {createElement(getElementIcon(player1Beast.element), {
+                    {createElement(getElementIcon(myBeast.element), {
                       size: 14,
-                      color: getElementColor(player1Beast.element),
+                      color: getElementColor(myBeast.element),
                     })}
-                    <Text style={[styles.elementText, { color: getElementColor(player1Beast.element) }]}>
-                      {player1Beast.element}
+                    <Text style={[styles.elementText, { color: getElementColor(myBeast.element) }]}>
+                      {myBeast.element}
                     </Text>
                   </View>
                 </View>
@@ -1574,22 +1670,22 @@ export default function BattleArenaScreen() {
               <View style={styles.modernStatItem}>
                 <Heart size={18} color="#EF4444" />
                 <View style={styles.modernStatBarContainer}>
-                  <Animated.View style={[styles.modernStatBar, player1HealthStyle, { backgroundColor: "#EF4444" }]} />
-                  <Text style={styles.modernStatText}>{Math.round(player1Beast.health) || 0}</Text>
+                  <Animated.View style={[styles.modernStatBar, myHealthStyle, { backgroundColor: "#EF4444" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(myBeast.health) || 0}</Text>
                 </View>
               </View>
 
               <View style={styles.modernStatItem}>
                 <Zap size={18} color="#7C3AED" />
                 <View style={styles.modernStatBarContainer}>
-                  <Animated.View style={[styles.modernStatBar, player1EnergyStyle, { backgroundColor: "#7C3AED" }]} />
-                  <Text style={styles.modernStatText}>{Math.round(player1Beast.energy)}</Text>
+                  <Animated.View style={[styles.modernStatBar, myEnergyStyle, { backgroundColor: "#7C3AED" }]} />
+                  <Text style={styles.modernStatText}>{Math.round(myBeast.energy)}</Text>
                 </View>
               </View>
-              {player1Beast.status && (
+              {myBeast.status && (
                 <View style={styles.statusEffectContainer}>
                   <Text style={styles.statusEffectText}>
-                    {player1Beast.status.type}: {player1Beast.status.duration} turns
+                    {myBeast.status.type}: {myBeast.status.duration} turns
                   </Text>
                 </View>
               )}
@@ -1616,6 +1712,7 @@ export default function BattleArenaScreen() {
           </Animated.View>
         )}
 
+        {/* Replace the moves panel with: */}
         {/* Enhanced Moves Panel */}
         {isMyTurn() && !gameOver && (
           <Animated.View entering={SlideInUp.delay(300)} style={styles.modernMovesPanel}>
@@ -1627,16 +1724,16 @@ export default function BattleArenaScreen() {
                 style={StyleSheet.absoluteFill}
               />
               <View style={styles.modernMovesGrid}>
-                {player1Beast.abilities.map((ability) => (
+                {myBeast.abilities.map((ability) => (
                   <TouchableOpacity
                     key={ability.id}
                     style={[
                       styles.modernMoveCard,
                       { borderColor: getAbilityTypeColor(ability.type) },
-                      player1Beast.energy < ability.energy_cost && styles.disabledMove,
+                      myBeast.energy < ability.energy_cost && styles.disabledMove,
                     ]}
-                    onPress={() => player1Beast.energy >= ability.energy_cost && handleAttack(ability)}
-                    disabled={player1Beast.energy < ability.energy_cost}
+                    onPress={() => myBeast.energy >= ability.energy_cost && handleAttack(ability)}
+                    disabled={myBeast.energy < ability.energy_cost}
                   >
                     <LinearGradient
                       colors={[`${getAbilityTypeColor(ability.type)}30`, "rgba(0, 0, 0, 0.8)"]}
