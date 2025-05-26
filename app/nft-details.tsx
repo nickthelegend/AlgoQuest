@@ -22,7 +22,7 @@ interface AssetDetails {
 }
 
 export default function NFTDetailsScreen() {
-  const { assetId } = useLocalSearchParams()
+  const { id } = useLocalSearchParams()
   const [assetDetails, setAssetDetails] = useState<AssetDetails | null>(null)
   const [imageUrl, setImageUrl] = useState<string>("")
 
@@ -33,7 +33,7 @@ export default function NFTDetailsScreen() {
   const loadAssetDetails = async () => {
     try {
       const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
-      const asset = await algodClient.getAssetByID(Number(assetId)).do()
+      const asset = await algodClient.getAssetByID(Number(id)).do()
 
       // Convert the asset to match our AssetDetails interface
       const convertedAsset: AssetDetails = {
@@ -62,7 +62,7 @@ export default function NFTDetailsScreen() {
   }
 
   const viewOnExplorer = () => {
-    Linking.openURL(`https://testnet.algoexplorer.io/asset/${assetId}`)
+    Linking.openURL(`https://testnet.algoexplorer.io/asset/${id}`)
   }
 
   if (!assetDetails) return null
