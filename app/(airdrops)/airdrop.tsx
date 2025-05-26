@@ -22,8 +22,34 @@ import { router, useLocalSearchParams } from "expo-router"
 import * as Haptics from "expo-haptics"
 import * as Clipboard from "expo-clipboard"
 import * as SecureStore from "expo-secure-store"
+import algosdk from "algosdk"
+import { Buffer } from "buffer"
 
 const { width } = Dimensions.get("window")
+
+// Algorand configuration
+const ALGOD_SERVER = "https://testnet-api.algonode.cloud"
+const ALGOD_PORT = ""
+const ALGOD_TOKEN = ""
+
+const METHODS = [
+  new algosdk.ABIMethod({ name: "claimDrop", desc: "", args: [], returns: { type: "void", desc: "" } }),
+
+];
+const algodClient = new algosdk.Algodv2(ALGOD_TOKEN, ALGOD_SERVER, ALGOD_PORT)
+
+// Helper function to get method by name
+function getMethodByName(methods: any[], name: string) {
+  const method = methods.find(m => m.name === name)
+  if (!method) {
+    throw new Error(`Method ${name} not found`)
+  }
+  return {
+    getSelector: () => {
+      return new Uint8Array(Buffer.from(name))
+    }
+  }
+}
 
 // Format large numbers with commas
 function formatNumber(num: string | number): string {
@@ -105,14 +131,58 @@ export default function AirdropDetailScreen() {
       return
     }
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-    setClaiming(true)
+    try {
+      setClaiming(true)
+      
+      // Get account from secure storage
+      const mnemonic = await SecureStore.getItemAsync("mnemonic")
+      if (!mnemonic) {
+        throw new Error("No wallet account found")
+      }
+      
+      const account = algosdk.mnemonicToSecretKey(mnemonic)
+      
+      // Get suggested parameters
+      const suggestedParams = await algodClient.getTransactionParams().do()
+      
+      // Create the claim transaction
+      const claimTxn = algosdk.makeApplicationNoOpTxnFromObject({
+        sender: account.addr,
+        appIndex: Number(params.dropAppID),
+        appArgs: [
+                 algosdk.getMethodByName(METHODS, 'claimDrop').getSelector(),
 
-    // Simulate claiming process
-    setTimeout(() => {
-      setClaiming(false)
+        ],
+        foreignAssets: [Number(params.assetID)],
+        suggestedParams: { ...suggestedParams, fee: Number(30) },
+        boxes: [{
+          appIndex: 0,
+          name: algosdk.decodeAddress(account.addr.toString()).publicKey
+        }]
+      })
+      
+      const txns = [claimTxn]
+      
+      // Sign the transaction
+      const signedTxns = txns.map((txn) => txn.signTxn(account.sk))
+      const txId = claimTxn.txID()
+      
+      // Send the signed transaction
+      await algodClient.sendRawTransaction(signedTxns).do()
+      
+      // Wait for confirmation
+      await algosdk.waitForConfirmation(algodClient, txId, 4)
+      
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
       setClaimed(true)
-    }, 2000)
+      
+    } catch (error) {
+      console.error("Error claiming airdrop:", error)
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+      // Handle error appropriately - you might want to show an alert or toast
+    } finally {
+      setClaiming(false)
+    }
   }
 
   const handleCopyToClipboard = async (text: string, type: string) => {
@@ -461,6 +531,12 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(239, 68, 68, 0.2)",
     borderWidth: 1,
     borderColor: "rgba(239, 68, 68, 0.3)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
   },
   statusText: {
     fontSize: 14,
@@ -470,6 +546,11 @@ const styles = StyleSheet.create({
     color: "#10B981",
   },
   expiredStatusText: {
+    color: "#EF4444",
+  },
+  expiredText: {
+    fontSize: 16,
+    fontWeight: "600",
     color: "#EF4444",
   },
   infoCardsContainer: {
