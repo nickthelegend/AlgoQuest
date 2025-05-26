@@ -676,7 +676,10 @@ export default function QMapScreen() {
           Alert.alert("Error", "No wallet credentials found")
           return
         }
-
+        if (!appDetails?.rewardAssetId) {
+          Alert.alert("Error", "No asset ID found for this quest")
+          return
+        }
         const account = algosdk.mnemonicToSecretKey(mnemonic)
         console.log(`Using wallet address: ${account.addr}`)
 
@@ -704,7 +707,7 @@ export default function QMapScreen() {
           appIndex: Number(appID),
           appArgs: [algosdk.getMethodByName(METHODS, "claimReward").getSelector()],
           suggestedParams: { ...suggestedParams, fee: 2000 },
-          foreignAssets: [BigInt(739714677), BigInt(734399300)],
+          foreignAssets: [BigInt(appDetails.rewardAssetId), BigInt(734399300)],
         })
 
         const txns = [txn2]
