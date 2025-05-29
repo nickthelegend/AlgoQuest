@@ -1,11 +1,23 @@
 "use client"
 
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Dimensions, RefreshControl } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, RefreshControl } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown, FadeIn } from "react-native-reanimated"
-import { Gift, Calendar, AlertCircle, ChevronLeft, Loader, Clock, Coins, CheckCircle2, Info } from "lucide-react-native"
+import {
+  Gift,
+  Calendar,
+  AlertCircle,
+  ChevronLeft,
+  Loader,
+  Clock,
+  Coins,
+  CheckCircle2,
+  Info,
+  Users,
+  TrendingUp,
+} from "lucide-react-native"
 import { useState, useEffect } from "react"
 import { router } from "expo-router"
 import algosdk from "algosdk"
@@ -103,7 +115,6 @@ async function fetchAndDecodeDropConfigs(appId: number): Promise<AirdropData[]> 
         dropAppID: decodedTuple[8],
         id: boxName,
         status: isExpired ? "expired" : "active",
-        // Generate a unique image based on token name and asset ID
         image: `https://picsum.photos/seed/${decodedTuple[0]}_${decodedTuple[2]}/300/300`,
       }
 
@@ -125,7 +136,7 @@ function formatNumber(num: bigint | number): string {
 // Format timestamp to readable date
 function formatDate(timestamp: bigint): string {
   const date = new Date(Number(timestamp) * 1000)
-  return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
 // Calculate time remaining until expiry
@@ -143,11 +154,11 @@ function getTimeRemaining(timestamp: bigint): string {
   const minutes = Math.floor((secondsRemaining % 3600) / 60)
 
   if (days > 0) {
-    return `${days}d ${hours}h remaining`
+    return `${days}d ${hours}h`
   } else if (hours > 0) {
-    return `${hours}h ${minutes}m remaining`
+    return `${hours}h ${minutes}m`
   } else {
-    return `${minutes}m remaining`
+    return `${minutes}m`
   }
 }
 
@@ -155,6 +166,12 @@ function getTimeRemaining(timestamp: bigint): string {
 function calculateProgress(claimed: bigint, total: bigint): number {
   if (total === BigInt(0)) return 0
   return Number((claimed * BigInt(100)) / total)
+}
+
+// Get token icon based on name
+function getTokenIcon(tokenName: string) {
+  const firstLetter = tokenName.charAt(0).toUpperCase()
+  return firstLetter
 }
 
 export default function AirdropScreen() {
@@ -212,19 +229,69 @@ export default function AirdropScreen() {
       return
     }
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-    setClaimingId(airdrop.id)
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+      setClaimingId(airdrop.id)
 
-    // Simulate claiming process
-    setTimeout(() => {
+      // Get wallet account from secure storage
+      const mnemonic = await SecureStore.getItemAsync("walletMnemonic")
+      if (!mnemonic) {
+        throw new Error("Wallet not found")
+      }
+
+      const account = algosdk.mnemonicToSecretKey(mnemonic)
+      const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
+
+      // Get suggested params
+      const suggestedParams = await algodClient.getTransactionParams().do()
+
+      // App ID and Beast Asset ID
+      const appID = airdrop.dropAppID.toString()
+      const beastAssetID = airdrop.assetID.toString()
+
+      // Method selector for claimDrop
+      const METHODS = [
+        {
+          name: "claimDrop",
+          args: [{ type: "uint64" }],
+          returns: { type: "void" },
+        },
+      ]
+
+      const claimTxn = algosdk.makeApplicationNoOpTxnFromObject({
+        sender: account.addr,
+        appIndex: Number(appID),
+        appArgs: [
+          algosdk.getMethodByName(METHODS, "claimDrop").getSelector(),
+          algosdk.encodeUint64(Number(beastAssetID)),
+        ],
+        foreignAssets: [Number(beastAssetID)],
+        suggestedParams: { ...suggestedParams, fee: Number(30) },
+        boxes: [{ appIndex: 0, name: algosdk.decodeAddress(account.addr.toString()).publicKey }],
+      })
+
+      const txns = [claimTxn]
+
+      // Sign the transaction
+      const signedTxns = txns.map((txn) => txn.signTxn(account.sk))
+      const txId = claimTxn.txID()
+
+      // Send the signed transaction
+      await algodClient.sendRawTransaction(signedTxns).do()
+
       setClaimingId(null)
       setClaimSuccess(airdrop.id)
 
       // Reset success state after 3 seconds
       setTimeout(() => {
         setClaimSuccess(null)
+        loadAirdrops() // Refresh the data
       }, 3000)
-    }, 2000)
+    } catch (error) {
+      console.error("Error claiming airdrop:", error)
+      setClaimingId(null)
+      // You might want to show an error message to the user here
+    }
   }
 
   const navigateToAirdropDetail = (airdrop: AirdropData) => {
@@ -251,17 +318,42 @@ export default function AirdropScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <Animated.View entering={FadeIn.duration(300)} style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <ChevronLeft size={24} color="#ffffff" />
         </TouchableOpacity>
         <Text style={styles.title}>Token Airdrops</Text>
-        <TouchableOpacity style={styles.infoButton} onPress={() => router.push("/help")}>
+        <TouchableOpacity style={styles.infoButton} onPress={() => router.push("/(airdrops)/help")}>
           <Info size={20} color="#ffffff" />
         </TouchableOpacity>
       </Animated.View>
 
-      <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.tabsContainer}>
+      {/* Stats Bar */}
+      <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.statsContainer}>
+        <BlurView intensity={20} tint="dark" style={styles.statsBlur}>
+          <View style={styles.statItem}>
+            <Gift size={16} color="#7C3AED" />
+            <Text style={styles.statNumber}>{airdrops.filter((a) => a.status === "active").length}</Text>
+            <Text style={styles.statLabel}>Active</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Clock size={16} color="#EF4444" />
+            <Text style={styles.statNumber}>{airdrops.filter((a) => a.status === "expired").length}</Text>
+            <Text style={styles.statLabel}>Expired</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <TrendingUp size={16} color="#10B981" />
+            <Text style={styles.statNumber}>{airdrops.length}</Text>
+            <Text style={styles.statLabel}>Total</Text>
+          </View>
+        </BlurView>
+      </Animated.View>
+
+      {/* Tabs */}
+      <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.tabsContainer}>
         <TouchableOpacity
           style={[styles.tab, activeTab === "active" && styles.activeTab]}
           onPress={() => {
@@ -269,7 +361,7 @@ export default function AirdropScreen() {
             setActiveTab("active")
           }}
         >
-          <Gift size={16} color={activeTab === "active" ? "#ffffff" : "#A098AE"} />
+          <Gift size={16} color={activeTab === "active" ? "#ffffff" : "#64748B"} />
           <Text style={[styles.tabText, activeTab === "active" && styles.activeTabText]}>Available</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -279,19 +371,21 @@ export default function AirdropScreen() {
             setActiveTab("expired")
           }}
         >
-          <Clock size={16} color={activeTab === "expired" ? "#ffffff" : "#A098AE"} />
+          <Clock size={16} color={activeTab === "expired" ? "#ffffff" : "#64748B"} />
           <Text style={[styles.tabText, activeTab === "expired" && styles.activeTabText]}>Expired</Text>
         </TouchableOpacity>
       </Animated.View>
 
+      {/* Content */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ffffff" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#7C3AED" />}
+        showsVerticalScrollIndicator={false}
       >
         {loading ? (
           <View style={styles.loadingContainer}>
             <Loader size={32} color="#7C3AED" />
-            <Text style={styles.loadingText}>Loading airdrops from blockchain...</Text>
+            <Text style={styles.loadingText}>Loading airdrops...</Text>
           </View>
         ) : filteredAirdrops.length > 0 ? (
           filteredAirdrops.map((airdrop, index) => (
@@ -300,139 +394,146 @@ export default function AirdropScreen() {
               entering={FadeInDown.delay(index * 100).springify()}
               style={styles.airdropCard}
             >
-              <TouchableOpacity
-                style={styles.cardTouchable}
-                onPress={() => navigateToAirdropDetail(airdrop)}
-                activeOpacity={0.9}
-              >
-                <BlurView intensity={40} tint="dark" style={styles.cardContent}>
-                  <LinearGradient
-                    colors={["rgba(124, 58, 237, 0.3)", "rgba(0, 0, 0, 0)"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={StyleSheet.absoluteFill}
-                  />
+              <BlurView intensity={40} tint="dark" style={styles.cardBlur}>
+                <LinearGradient
+                  colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0.3)"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
 
-                  {/* Card Header */}
-                  <View style={styles.cardHeader}>
-                    <Image source={{ uri: airdrop.image }} style={styles.airdropImage} />
-                    <View style={styles.airdropInfo}>
-                      <Text style={styles.airdropTitle}>{airdrop.tokenName}</Text>
-                      <Text style={styles.airdropDescription}>
-                        Asset ID: {airdrop.assetID.toString().substring(0, 8)}...
-                      </Text>
-
-                      {/* Time Remaining Badge */}
-                      <View style={styles.timeRemainingBadge}>
-                        <Clock size={12} color={airdrop.status === "active" ? "#7C3AED" : "#EF4444"} />
-                        <Text
-                          style={[styles.timeRemainingText, airdrop.status === "expired" && styles.expiredTimeText]}
-                        >
-                          {getTimeRemaining(airdrop.expiryDate)}
-                        </Text>
-                      </View>
-                    </View>
+                {/* Card Header */}
+                <View style={styles.cardHeader}>
+                  <View style={styles.tokenIconContainer}>
+                    <Text style={styles.tokenIcon}>{getTokenIcon(airdrop.tokenName)}</Text>
                   </View>
+                  <View style={styles.headerInfo}>
+                    <Text style={styles.tokenName}>{airdrop.tokenName}</Text>
+                    <Text style={styles.assetId}>#{airdrop.assetID.toString().slice(-6)}</Text>
+                  </View>
+                  <View style={[styles.statusBadge, airdrop.status === "expired" && styles.expiredStatusBadge]}>
+                    <Text style={[styles.statusText, airdrop.status === "expired" && styles.expiredStatusText]}>
+                      {airdrop.status === "active" ? "LIVE" : "ENDED"}
+                    </Text>
+                  </View>
+                </View>
 
-                  {/* Progress Bar */}
-                  <View style={styles.progressContainer}>
-                    <View style={styles.progressBarBackground}>
+                {/* Reward Section */}
+                <View style={styles.rewardSection}>
+                  <View style={styles.rewardHeader}>
+                    <Coins size={18} color="#7C3AED" />
+                    <Text style={styles.rewardLabel}>Reward Amount</Text>
+                  </View>
+                  <Text style={styles.rewardAmount}>
+                    {formatNumber(airdrop.amountToSend)} {airdrop.tokenName}
+                  </Text>
+                </View>
+
+                {/* Progress Section */}
+                <View style={styles.progressSection}>
+                  <View style={styles.progressHeader}>
+                    <Users size={16} color="#64748B" />
+                    <Text style={styles.progressLabel}>Claimed Progress</Text>
+                    <Text style={styles.progressPercentage}>
+                      {calculateProgress(airdrop.numClaims, airdrop.maxClaims)}%
+                    </Text>
+                  </View>
+                  <View style={styles.progressBarContainer}>
+                    <View style={styles.progressBar}>
                       <View
                         style={[
-                          styles.progressBarFill,
+                          styles.progressFill,
                           {
                             width: `${calculateProgress(airdrop.numClaims, airdrop.maxClaims)}%`,
-                            backgroundColor: airdrop.status === "active" ? "#7C3AED" : "#94A3B8",
+                            backgroundColor: airdrop.status === "active" ? "#7C3AED" : "#64748B",
                           },
                         ]}
                       />
                     </View>
-                    <View style={styles.progressLabels}>
-                      <Text style={styles.progressText}>
-                        {formatNumber(airdrop.numClaims)} / {formatNumber(airdrop.maxClaims)} claimed
-                      </Text>
-                      <Text style={styles.progressPercentage}>
-                        {calculateProgress(airdrop.numClaims, airdrop.maxClaims)}%
-                      </Text>
-                    </View>
                   </View>
+                  <Text style={styles.progressText}>
+                    {formatNumber(airdrop.numClaims)} / {formatNumber(airdrop.maxClaims)} claimed
+                  </Text>
+                </View>
 
-                  {/* Reward Container */}
-                  <View style={styles.rewardContainer}>
-                    <View style={styles.rewardIconContainer}>
-                      <Coins size={20} color="#7C3AED" />
-                    </View>
-                    <View style={styles.rewardTextContainer}>
-                      <Text style={styles.rewardLabel}>Reward Amount</Text>
-                      <Text style={styles.rewardText}>
-                        {formatNumber(airdrop.amountToSend)} {airdrop.tokenName}
-                      </Text>
-                    </View>
+                {/* Time Section */}
+                <View style={styles.timeSection}>
+                  <Calendar size={16} color="#64748B" />
+                  <View style={styles.timeInfo}>
+                    <Text style={styles.timeLabel}>{airdrop.status === "active" ? "Expires" : "Expired"}</Text>
+                    <Text style={styles.timeValue}>{formatDate(airdrop.expiryDate)}</Text>
                   </View>
-
-                  {/* Expiry Container */}
-                  <View style={styles.expiryContainer}>
-                    <View style={styles.expiryIconContainer}>
-                      <Calendar size={16} color="#A098AE" />
-                    </View>
-                    <View>
-                      <Text style={styles.expiryLabel}>
-                        {airdrop.status === "active" ? "Expires on" : "Expired on"}
-                      </Text>
-                      <Text style={styles.expiryText}>{formatDate(airdrop.expiryDate)}</Text>
-                    </View>
+                  <View style={styles.timeRemaining}>
+                    <Text style={[styles.timeRemainingText, airdrop.status === "expired" && styles.expiredTimeText]}>
+                      {getTimeRemaining(airdrop.expiryDate)}
+                    </Text>
                   </View>
+                </View>
 
-                  {/* Claim Button or Expired Badge */}
+                {/* Action Buttons */}
+                <View style={styles.actionSection}>
                   {airdrop.status === "active" ? (
                     <TouchableOpacity
                       style={[
                         styles.claimButton,
                         claimingId === airdrop.id && styles.claimingButton,
-                        claimSuccess === airdrop.id && styles.claimedButton,
+                        claimSuccess === airdrop.id && styles.successButton,
                       ]}
                       onPress={() => handleClaimAirdrop(airdrop)}
                       disabled={claimingId !== null || claimSuccess !== null}
                     >
-                      {claimingId === airdrop.id ? (
-                        <View style={styles.claimingContainer}>
-                          <Loader size={20} color="#ffffff" />
-                          <Text style={styles.claimButtonText}>Claiming...</Text>
-                        </View>
-                      ) : claimSuccess === airdrop.id ? (
-                        <View style={styles.claimingContainer}>
-                          <CheckCircle2 size={20} color="#ffffff" />
-                          <Text style={styles.claimButtonText}>Claimed!</Text>
-                        </View>
-                      ) : (
-                        <Text style={styles.claimButtonText}>Claim Reward</Text>
-                      )}
+                      <LinearGradient
+                        colors={
+                          claimSuccess === airdrop.id
+                            ? ["#10B981", "#059669"]
+                            : claimingId === airdrop.id
+                              ? ["#5B21B6", "#4C1D95"]
+                              : ["#7C3AED", "#5B21B6"]
+                        }
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.claimGradient}
+                      >
+                        {claimingId === airdrop.id ? (
+                          <View style={styles.claimContent}>
+                            <Loader size={18} color="#ffffff" />
+                            <Text style={styles.claimText}>Claiming...</Text>
+                          </View>
+                        ) : claimSuccess === airdrop.id ? (
+                          <View style={styles.claimContent}>
+                            <CheckCircle2 size={18} color="#ffffff" />
+                            <Text style={styles.claimText}>Claimed!</Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.claimText}>Claim Reward</Text>
+                        )}
+                      </LinearGradient>
                     </TouchableOpacity>
                   ) : (
-                    <View style={styles.expiredBadge}>
+                    <View style={styles.expiredButton}>
                       <AlertCircle size={16} color="#EF4444" />
-                      <Text style={styles.expiredText}>Airdrop Ended</Text>
+                      <Text style={styles.expiredButtonText}>Airdrop Ended</Text>
                     </View>
                   )}
 
-                  {/* View Details Button */}
                   <TouchableOpacity style={styles.detailsButton} onPress={() => navigateToAirdropDetail(airdrop)}>
-                    <Text style={styles.detailsButtonText}>View Details</Text>
+                    <Text style={styles.detailsText}>View Details</Text>
                   </TouchableOpacity>
-                </BlurView>
-              </TouchableOpacity>
+                </View>
+              </BlurView>
             </Animated.View>
           ))
         ) : (
-          <View style={styles.emptyContainer}>
-            <Gift size={64} color="rgba(255, 255, 255, 0.2)" />
-            <Text style={styles.emptyText}>No {activeTab} airdrops available</Text>
-            <Text style={styles.emptySubtext}>Check back later for new token airdrops</Text>
-
+          <Animated.View entering={FadeInDown.delay(300)} style={styles.emptyContainer}>
+            <View style={styles.emptyIconContainer}>
+              <Gift size={48} color="#7C3AED" />
+            </View>
+            <Text style={styles.emptyTitle}>No {activeTab} airdrops</Text>
+            <Text style={styles.emptySubtitle}>Check back later for new token airdrops</Text>
             <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
-              <Text style={styles.refreshButtonText}>Refresh</Text>
+              <Text style={styles.refreshText}>Refresh</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -448,7 +549,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingVertical: 16,
   },
   backButton: {
@@ -468,18 +569,46 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   title: {
-    fontSize: 24,
-    fontWeight: "bold",
+    fontSize: 20,
+    fontWeight: "700",
     color: "#ffffff",
-    textShadowColor: "rgba(0, 0, 0, 0.2)",
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
+  },
+  statsContainer: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  statsBlur: {
+    flexDirection: "row",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 4,
+  },
+  statNumber: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#ffffff",
+  },
+  statLabel: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "500",
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginHorizontal: 16,
   },
   tabsContainer: {
     flexDirection: "row",
-    marginHorizontal: 24,
-    marginBottom: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginHorizontal: 20,
+    marginBottom: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
     borderRadius: 12,
     padding: 4,
   },
@@ -490,263 +619,277 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 8,
-    gap: 8,
+    gap: 6,
   },
   activeTab: {
     backgroundColor: "#7C3AED",
   },
   tabText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    color: "#A098AE",
+    color: "#64748B",
   },
   activeTabText: {
     color: "#ffffff",
   },
   scrollContent: {
-    padding: 24,
+    paddingHorizontal: 20,
     paddingBottom: 100,
   },
   airdropCard: {
-    marginBottom: 24,
-    borderRadius: 16,
+    marginBottom: 16,
+    borderRadius: 20,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(124, 58, 237, 0.3)",
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+    borderColor: "rgba(124, 58, 237, 0.2)",
   },
-  cardTouchable: {
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  cardContent: {
+  cardBlur: {
     padding: 20,
   },
   cardHeader: {
     flexDirection: "row",
-    marginBottom: 16,
-  },
-  airdropImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    marginRight: 16,
-    borderWidth: 2,
-    borderColor: "rgba(124, 58, 237, 0.3)",
-  },
-  airdropInfo: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  airdropTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#ffffff",
-    marginBottom: 4,
-  },
-  airdropDescription: {
-    fontSize: 14,
-    color: "#A098AE",
-    lineHeight: 20,
-    marginBottom: 8,
-  },
-  timeRemainingBadge: {
-    flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    marginBottom: 20,
+  },
+  tokenIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  tokenIcon: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#7C3AED",
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  tokenName: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#ffffff",
+    marginBottom: 2,
+  },
+  assetId: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "500",
+  },
+  statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
-    alignSelf: "flex-start",
-    gap: 4,
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
+  },
+  expiredStatusBadge: {
+    backgroundColor: "rgba(239, 68, 68, 0.2)",
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#7C3AED",
+  },
+  expiredStatusText: {
+    color: "#EF4444",
+  },
+  rewardSection: {
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  rewardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
+  rewardLabel: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "500",
+  },
+  rewardAmount: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#ffffff",
+  },
+  progressSection: {
+    marginBottom: 16,
+  },
+  progressHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
+  progressLabel: {
+    flex: 1,
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "500",
+  },
+  progressPercentage: {
+    fontSize: 12,
+    color: "#7C3AED",
+    fontWeight: "700",
+  },
+  progressBarContainer: {
+    marginBottom: 6,
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  progressText: {
+    fontSize: 11,
+    color: "#64748B",
+  },
+  timeSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 20,
+    gap: 10,
+  },
+  timeInfo: {
+    flex: 1,
+  },
+  timeLabel: {
+    fontSize: 11,
+    color: "#64748B",
+    marginBottom: 2,
+  },
+  timeValue: {
+    fontSize: 13,
+    color: "#ffffff",
+    fontWeight: "600",
+  },
+  timeRemaining: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
   },
   timeRemainingText: {
-    fontSize: 12,
-    fontWeight: "500",
+    fontSize: 11,
     color: "#7C3AED",
+    fontWeight: "600",
   },
   expiredTimeText: {
     color: "#EF4444",
   },
-  progressContainer: {
-    marginBottom: 16,
-  },
-  progressBarBackground: {
-    height: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 4,
-    overflow: "hidden",
-    marginBottom: 8,
-  },
-  progressBarFill: {
-    height: "100%",
-    borderRadius: 4,
-  },
-  progressLabels: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  progressText: {
-    fontSize: 12,
-    color: "#A098AE",
-  },
-  progressPercentage: {
-    fontSize: 12,
-    color: "#A098AE",
-    fontWeight: "bold",
-  },
-  rewardContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(124, 58, 237, 0.1)",
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  rewardIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(124, 58, 237, 0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  rewardTextContainer: {
-    flex: 1,
-  },
-  rewardLabel: {
-    fontSize: 12,
-    color: "#A098AE",
-    marginBottom: 2,
-  },
-  rewardText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#ffffff",
-  },
-  expiryContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  expiryIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  expiryLabel: {
-    fontSize: 12,
-    color: "#A098AE",
-    marginBottom: 2,
-  },
-  expiryText: {
-    fontSize: 14,
-    color: "#ffffff",
-    fontWeight: "500",
+  actionSection: {
+    gap: 12,
   },
   claimButton: {
-    backgroundColor: "#7C3AED",
-    paddingVertical: 14,
     borderRadius: 12,
-    alignItems: "center",
-    marginBottom: 12,
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    overflow: "hidden",
   },
   claimingButton: {
-    backgroundColor: "#5B21B6",
+    opacity: 0.8,
   },
-  claimedButton: {
-    backgroundColor: "#10B981",
+  successButton: {
+    opacity: 1,
   },
-  claimingContainer: {
+  claimGradient: {
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  claimContent: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  claimButtonText: {
+  claimText: {
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "#ffffff",
   },
-  expiredBadge: {
+  expiredButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
-    paddingVertical: 14,
+    paddingVertical: 16,
     borderRadius: 12,
-    marginBottom: 12,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    gap: 8,
   },
-  expiredText: {
+  expiredButtonText: {
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "600",
     color: "#EF4444",
-    marginLeft: 8,
   },
   detailsButton: {
     paddingVertical: 12,
-    borderRadius: 12,
     alignItems: "center",
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
-  detailsButtonText: {
+  detailsText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#ffffff",
+    color: "#64748B",
   },
   emptyContainer: {
     alignItems: "center",
-    justifyContent: "center",
     paddingVertical: 60,
   },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#ffffff",
-    marginTop: 16,
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
   },
-  emptySubtext: {
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#ffffff",
+    marginBottom: 8,
+  },
+  emptySubtitle: {
     fontSize: 14,
-    color: "#A098AE",
-    marginTop: 8,
-    marginBottom: 24,
+    color: "#64748B",
     textAlign: "center",
+    marginBottom: 24,
   },
   refreshButton: {
     paddingHorizontal: 24,
     paddingVertical: 12,
-    backgroundColor: "rgba(124, 58, 237, 0.2)",
     borderRadius: 12,
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
     borderWidth: 1,
     borderColor: "rgba(124, 58, 237, 0.3)",
   },
-  refreshButtonText: {
-    fontSize: 16,
+  refreshText: {
+    fontSize: 14,
     fontWeight: "600",
     color: "#7C3AED",
   },
   loadingContainer: {
     alignItems: "center",
-    justifyContent: "center",
     paddingVertical: 60,
-    gap: 16,
+    gap: 12,
   },
   loadingText: {
-    fontSize: 16,
-    color: "#ffffff",
+    fontSize: 14,
+    color: "#64748B",
   },
 })
