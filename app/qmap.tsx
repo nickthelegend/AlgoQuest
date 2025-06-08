@@ -969,7 +969,7 @@ export default function QMapScreen() {
                 {appDetails?.rewardAssetId && (
                   <TouchableOpacity
                     style={styles.assetIdRow}
-                    onPress={() => Linking.openURL(`https://testnet.algoexplorer.io/asset/${appDetails.rewardAssetId}`)}
+                    onPress={() => Linking.openURL(`https://testnet.explorer.perawallet.app/asset/${appDetails.rewardAssetId}`)}
                   >
                     <Text style={styles.assetIdLabel}>Asset ID: </Text>
                     <Text style={styles.assetIdValue}>{appDetails.rewardAssetId}</Text>

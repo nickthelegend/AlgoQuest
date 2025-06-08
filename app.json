@@ -8,6 +8,9 @@
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "assetBundlePatterns": [
+      "assets/sounds/*"
+    ],
     "ios": {
       "supportsTablet": true
     },
@@ -18,14 +21,14 @@
         },
         "usesCleartextTraffic": true,
         "permissions": [
-        "INTERNET",
-        "ACCESS_NETWORK_STATE"
-      ]
+          "INTERNET",
+          "ACCESS_NETWORK_STATE"
+        ]
       },
       "package": "com.nickthelegend.AlgoQuest",
-      "permissions": [ 
+      "permissions": [
         "INTERNET",
-      "ACCESS_NETWORK_STATE",
+        "ACCESS_NETWORK_STATE",
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.ACCESS_FINE_LOCATION",
@@ -70,7 +73,9 @@
       [
         "expo-asset",
         {
-          "assets": ["./assets/icons/treasure_chest.png"]
+          "assets": [
+            "./assets/icons/treasure_chest.png"
+          ]
         }
       ],
       [
@@ -88,10 +93,12 @@
       [
         "expo-font",
         {
-          "fonts": ["./assets/fonts/Audiowide-Regular.ttf"]
+          "fonts": [
+            "./assets/fonts/Audiowide-Regular.ttf"
+          ]
         }
-      ]
-
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true
