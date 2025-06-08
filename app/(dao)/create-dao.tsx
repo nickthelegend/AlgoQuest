@@ -83,7 +83,7 @@ export default function CreateDAOScreen() {
       };
       
       // Make the API request
-      const response = await fetch('http://172.16.3.203:3000/api/createDao', {
+      const response = await fetch('https://quest-generator-two.vercel.app/api/createDao', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
