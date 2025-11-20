@@ -2,14 +2,21 @@
 
 import { Tabs } from "expo-router"
 import { StyleSheet, View } from "react-native"
-import { Home, Map, Users, Wallet, User,Swords } from "lucide-react-native"
+import { Home, Backpack, Users, Wallet, User, Swords } from "lucide-react-native"
 import { BlurView } from "expo-blur"
 import Animated, { useAnimatedStyle, withSpring } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useState } from "react"
 import Header from "@/components/header"
 import SideMenu from "@/components/side-menu"
-function TabBarIcon({ color, size, icon: Icon, focused }) {
+interface TabBarIconProps {
+  color: string
+  size: number
+  icon: React.ElementType
+  focused: boolean
+}
+
+function TabBarIcon({ color, size, icon: Icon, focused }: TabBarIconProps) {
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       {
@@ -23,13 +30,13 @@ function TabBarIcon({ color, size, icon: Icon, focused }) {
 
   return (
     <Animated.View style={[animatedStyle]}>
-      
+
       <Icon size={28} color={color} fill={focused ? color : "transparent"} strokeWidth={focused ? 2 : 1.5} />
     </Animated.View>
   )
 }
 
-function FloatingTabBarIcon({ color, size, icon: Icon, focused }) {
+function FloatingTabBarIcon({ color, size, icon: Icon, focused }: TabBarIconProps) {
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       {
@@ -57,75 +64,75 @@ export default function TabLayout() {
     <View style={styles.container}>
       <Header onMenuPress={() => setMenuVisible(true)} />
       <SideMenu visible={menuVisible} onClose={() => setMenuVisible(false)} />
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: "#ffffff",
-        tabBarInactiveTintColor: "rgba(255, 255, 255, 0.5)",
-        headerShown: false,
-        tabBarStyle: {
-          position: "absolute",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: 80 + insets.bottom,
-          backgroundColor: "rgba(0, 0, 0, 0.95)",
-          borderTopWidth: 0,
-          elevation: 0,
-          paddingBottom: insets.bottom,
-        },
-        tabBarBackground: () => <BlurView tint="dark" intensity={30} style={StyleSheet.absoluteFill} />,
-        tabBarItemStyle: {
-          paddingTop: 12,
-          height: 80,
-        },
-        tabBarLabelStyle: {
-          display: "none",
-        },
-        sceneStyle: {
-          marginTop:70
-        }
-        
+      <Tabs
+        screenOptions={{
+          tabBarActiveTintColor: "#ffffff",
+          tabBarInactiveTintColor: "rgba(255, 255, 255, 0.5)",
+          headerShown: false,
+          tabBarStyle: {
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 80 + insets.bottom,
+            backgroundColor: "rgba(0, 0, 0, 0.95)",
+            borderTopWidth: 0,
+            elevation: 0,
+            paddingBottom: insets.bottom,
+          },
+          tabBarBackground: () => <BlurView tint="dark" intensity={30} style={StyleSheet.absoluteFill} />,
+          tabBarItemStyle: {
+            paddingTop: 12,
+            height: 80,
+          },
+          tabBarLabelStyle: {
+            display: "none",
+          },
+          sceneStyle: {
+            marginTop: 70
+          }
 
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Home",
-          tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Home} color={color} size={28} focused={focused} />,
+
         }}
-      />
-      <Tabs.Screen
-        name="quest-map"
-        options={{
-          title: "Quest Map",
-          tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Map} color={color} size={28} focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="connect"
-        options={{
-          title: "Connect",
-          tabBarIcon: ({ color, focused }) => (
-            <FloatingTabBarIcon icon={Users} color={color} size={28} focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="wallet"
-        options={{
-          title: "Wallet",
-          tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Wallet} color={color} size={28} focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="battle-beasts"
-        options={{
-          title: "Battle",
-          tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Swords} color={color} size={28} focused={focused} />,
-        }}
-      />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: "Home",
+            tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Home} color={color} size={28} focused={focused} />,
+          }}
+        />
+        <Tabs.Screen
+          name="arsenal"
+          options={{
+            title: "Arsenal",
+            tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Backpack} color={color} size={28} focused={focused} />,
+          }}
+        />
+        <Tabs.Screen
+          name="connect"
+          options={{
+            title: "Connect",
+            tabBarIcon: ({ color, focused }) => (
+              <FloatingTabBarIcon icon={Users} color={color} size={28} focused={focused} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="wallet"
+          options={{
+            title: "Wallet",
+            tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Wallet} color={color} size={28} focused={focused} />,
+          }}
+        />
+        <Tabs.Screen
+          name="battle-beasts"
+          options={{
+            title: "Battle",
+            tabBarIcon: ({ color, focused }) => <TabBarIcon icon={Swords} color={color} size={28} focused={focused} />,
+          }}
+        />
+      </Tabs>
     </View>
   )
 }

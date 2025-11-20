@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.2",
+    "@lottiefiles/dotlottie-react": "^0.17.7",
     "@react-native-async-storage/async-storage": "1.23.1",
     "@react-native-community/datetimepicker": "8.2.0",
     "@react-navigation/bottom-tabs": "^7.2.0",
@@ -24,6 +25,7 @@
     "algosdk": "^3.2.0",
     "expo": "~52.0.46",
     "expo-asset": "~11.0.4",
+    "expo-audio": "~0.3.5",
     "expo-av": "~15.0.2",
     "expo-barcode-scanner": "^13.0.1",
     "expo-blur": "~14.0.3",
@@ -70,8 +72,7 @@
     "react-native-turbo-mock-location-detector": "^2.3.1",
     "react-native-url-polyfill": "^2.0.0",
     "react-native-web": "~0.19.13",
-    "react-native-webview": "13.12.5",
-    "expo-audio": "~0.3.5"
+    "react-native-webview": "13.12.5"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

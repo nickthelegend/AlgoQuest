@@ -129,9 +129,9 @@ export default function HomeScreen() {
     { title: "NFTs Collected", progress: 3, total: 5, color: "#10B981", icon: ImageIcon },
   ]
 
-  const navigateToQuestMap = () => {
-    router.push("/quest-map")
-  }
+  // const navigateToQuestMap = () => {
+  //   router.push("/quest-map")
+  // }
 
   return (
     <ScreenLayout>
@@ -327,9 +327,9 @@ export default function HomeScreen() {
               <BookOpen size={18} color="#ffffff" />
               <Text style={styles.sectionTitle}>Upcoming Quests</Text>
             </View>
-            <TouchableOpacity style={styles.seeAllButton} onPress={navigateToQuestMap}>
+            {/* <TouchableOpacity style={styles.seeAllButton} onPress={navigateToQuestMap}>
               <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.questsScroll}>
@@ -341,7 +341,7 @@ export default function HomeScreen() {
               >
                 <TouchableOpacity activeOpacity={0.9}>
                   <LinearGradient
-                    colors={quest.color}
+                    colors={quest.color as [string, string, ...string[]]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.questGradient}
