@@ -129,10 +129,6 @@ export default function HomeScreen() {
     { title: "NFTs Collected", progress: 3, total: 5, color: "#10B981", icon: ImageIcon },
   ]
 
-  // const navigateToQuestMap = () => {
-  //   router.push("/quest-map")
-  // }
-
   return (
     <ScreenLayout>
       <LinearGradient colors={["#0F0F0F", "#000000"]} style={StyleSheet.absoluteFillObject} />

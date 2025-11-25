@@ -108,13 +108,11 @@ export default function BattleLobbyScreen() {
   }
 
   useEffect(() => {
-    const cleanup = initialize()
+    initialize()
 
-    // Return cleanup function
+    // Cleanup is handled within initialize function
     return () => {
-      if (cleanup && typeof cleanup === "function") {
-        cleanup()
-      }
+      // Cleanup logic if needed
     }
   }, [battleId, beastId])
 
@@ -360,17 +358,18 @@ export default function BattleLobbyScreen() {
             <Animated.View style={animatedPulseStyle}>
               <Trophy size={32} color="#F59E0B" />
             </Animated.View>
-            <Text style={styles.statusTitle}>Waiting for Opponent</Text>
+            <Text style={styles.statusTitle}>Battle Room Ready</Text>
           </View>
 
           <Text style={styles.statusText}>
-            Challenge sent to <Text style={styles.highlightText}>{opponentName || "Unknown Player"}</Text>
+            Waiting for <Text style={styles.highlightText}>{opponentName || "opponent"}</Text> to join
           </Text>
 
           <View style={styles.waitingIndicator}>
             <Animated.View style={animatedRotateStyle}>
               <Users size={24} color="#7C3AED" />
             </Animated.View>
+            <ActivityIndicator size="small" color="#7C3AED" style={{ marginLeft: 8 }} />
             <Text style={styles.waitingText}>Waiting for response...</Text>
           </View>
 

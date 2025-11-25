@@ -19,10 +19,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const checkWallet = async () => {
     try {
+      // Check for either mnemonic (generated wallet) or wallet address (PeraWallet)
       const mnemonic = await SecureStore.getItemAsync("mnemonic")
-      setHasWallet(!!mnemonic)
+      const walletAddress = await SecureStore.getItemAsync("walletAddress")
+      const hasAnyWallet = !!(mnemonic || walletAddress)
+      
+      setHasWallet(hasAnyWallet)
 
-      if (!mnemonic) {
+      if (!hasAnyWallet) {
         router.replace("/onboarding")
       }
     } catch (error) {

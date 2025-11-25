@@ -12,12 +12,14 @@ import {
   Platform,
   Modal,
   FlatList,
+  TextInput,
+  ActivityIndicator,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
 import Animated, { FadeInDown } from "react-native-reanimated"
-import { ArrowLeft, Shield, Swords, Crown, Star, Users, X, Check, Plus } from "lucide-react-native"
+import { ArrowLeft, Shield, Swords, Crown, Star, Users, X, Check, Plus, Copy, LogIn } from "lucide-react-native"
 import { router } from "expo-router"
 import * as NearbyConnections from "expo-nearby-connections"
 import * as Notifications from "expo-notifications"
@@ -25,6 +27,18 @@ import * as SecureStore from "expo-secure-store"
 import { PERMISSIONS, RESULTS, checkMultiple, requestMultiple } from "react-native-permissions"
 import algosdk from "algosdk"
 import { supabase } from "@/lib/supabase"
+import { createBattleRoom, joinBattleRoom } from "@/lib/battleRoom"
+import { setStringAsync } from "expo-clipboard"
+import {
+  validateRoomCodeFormat,
+  handleInvalidRoomCode,
+  handlePermissionDenied,
+  handleDatabaseError,
+  PermissionType,
+  getUserFriendlyErrorMessage,
+  AppError,
+  ErrorType,
+} from "@/lib/errorHandling"
 
 // Declare __DEV__ if it's not already defined (e.g., in a testing environment)
 declare const __DEV__: boolean
@@ -117,6 +131,13 @@ export default function FindPlayersScreen() {
   const [isLoading, setIsLoading] = useState(false)
   const [showBeastSelector, setShowBeastSelector] = useState(false)
   const [hasPermissions, setHasPermissions] = useState(false)
+  
+  // Room code states
+  const [createdRoomCode, setCreatedRoomCode] = useState<string | null>(null)
+  const [joinRoomCode, setJoinRoomCode] = useState<string>("")
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false)
+  const [isJoiningRoom, setIsJoiningRoom] = useState(false)
+  const [createdBattleId, setCreatedBattleId] = useState<string | null>(null)
 
   // Set up notification handler
   useEffect(() => {
@@ -140,10 +161,20 @@ export default function FindPlayersScreen() {
 
     // Set up notification handler for deep links
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      if (response.notification.request.content.data?.url) {
-        const url = response.notification.request.content.data.url as string
-        // Handle the deep link URL
-        router.push(url)
+      const data = response.notification.request.content.data;
+      if (data?.roomCode && data?.battleId) {
+        // Handle battle invitation from notification
+        router.push({
+          pathname: "/(game)/battle-lobby" as any,
+          params: {
+            battleId: data.battleId as string,
+            roomCode: data.roomCode as string,
+          },
+        });
+      } else if (data?.url) {
+        // Handle legacy deep link URL
+        const url = data.url as string;
+        router.push(url as any);
       }
     })
 
@@ -164,9 +195,20 @@ export default function FindPlayersScreen() {
       if (granted) {
         loadUserData()
       } else {
-        Alert.alert(
-          "Permissions Required",
-          "This feature requires Bluetooth and Location permissions to work properly.",
+        // Use error handling utility for permission denial
+        handlePermissionDenied(
+          PermissionType.BLUETOOTH,
+          () => {
+            // On Android, we can open app settings
+            if (Platform.OS === 'android') {
+              // User can manually open settings
+              Alert.alert(
+                "Open Settings",
+                "Please enable Bluetooth and Location permissions in your device settings.",
+                [{ text: "OK" }]
+              )
+            }
+          }
         )
       }
     }
@@ -224,60 +266,119 @@ export default function FindPlayersScreen() {
     const onInvitationListener = NearbyConnections.onInvitationReceived((data) => {
       console.log("Battle invitation received from:", data.name)
       console.log("Full invitation data:", data)
-      console.log("Payload received:", data.payload)
-      console.log("Data keys:", Object.keys(data))
       setDebugInfo((prev) => prev + `\nInvitation received: ${JSON.stringify(data)}`)
 
-      // Extract the sender wallet address from the payload - try multiple sources
-      let senderWalletAddress = ""
+      try {
+        // Parse the invitation payload to extract room code and battle information
+        // The payload should be a JSON string with roomCode, battleId, and playerName
+        let invitationData: {
+          roomCode?: string;
+          battleId?: string;
+          playerName?: string;
+          walletAddress?: string;
+        } = {};
 
-      if (data.payload) {
-        senderWalletAddress = data.payload
-      } else if (data.name && data.name.length > 10) {
-        // If name looks like a wallet address, use it
-        senderWalletAddress = data.name
-      } else {
-        console.warn("No wallet address found in invitation data")
-      }
+        // Try to parse the name field as JSON (new format with room code)
+        try {
+          invitationData = JSON.parse(data.name);
+          console.log("Parsed invitation data from name:", invitationData);
+        } catch (parseError) {
+          // Fallback: treat name as wallet address (old format)
+          console.log("Could not parse name as JSON, using as wallet address");
+          invitationData = {
+            walletAddress: data.name,
+            playerName: data.name,
+          };
+        }
 
-      console.log("Final extracted sender wallet address:", senderWalletAddress)
+        const { roomCode, battleId, playerName, walletAddress } = invitationData;
 
-      // Schedule a local notification to alert the user with deep link
-      Notifications.scheduleNotificationAsync({
-        content: {
-          title: "Battle Challenge",
-          body: `${data.name} wants to battle with you!`,
-          data: {
-            url: `exp+algoquest:///(game)/confirm?sender=${encodeURIComponent(senderWalletAddress)}`,
-          },
-        },
-        trigger: null, // sends the notification immediately
-      })
+        console.log("Extracted invitation data:", { roomCode, battleId, playerName, walletAddress });
+        setDebugInfo((prev) => prev + `\nExtracted: roomCode=${roomCode}, battleId=${battleId}`);
 
-      // Prompt the user to accept or reject the battle
-      Alert.alert(
-        "Battle Challenge",
-        `${data.name} wants to battle with you!`,
-        [
-          {
-            text: "Decline",
-            onPress: () => handleRejectBattle(data.peerId),
-            style: "cancel",
-          },
-          {
-            text: "Accept",
-            onPress: () => {
-              console.log("Navigating to confirm with sender:", senderWalletAddress)
-              // Navigate to confirm screen with sender wallet address
-              router.push({
-                pathname: "/(game)/confirm",
-                params: { sender: senderWalletAddress },
-              })
+        // Determine the display name
+        const displayName = playerName || walletAddress || "Unknown Player";
+
+        // Schedule a local notification to alert the user
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Battle Challenge",
+            body: `${displayName} wants to battle with you!${roomCode ? ` Room: ${roomCode}` : ''}`,
+            data: {
+              roomCode,
+              battleId,
+              walletAddress,
             },
           },
-        ],
-        { cancelable: false },
-      )
+          trigger: null, // sends the notification immediately
+        }).catch((notifError) => {
+          console.error("Error scheduling notification:", notifError);
+        });
+
+        // Prompt the user to accept or reject the battle
+        Alert.alert(
+          "Battle Challenge",
+          `${displayName} wants to battle with you!${roomCode ? `\n\nRoom Code: ${roomCode}` : ''}`,
+          [
+            {
+              text: "Decline",
+              onPress: () => handleRejectBattle(data.peerId),
+              style: "cancel",
+            },
+            {
+              text: "Accept",
+              onPress: async () => {
+                try {
+                  console.log("Accepting battle invitation");
+                  setDebugInfo((prev) => prev + `\nAccepting battle with room code: ${roomCode}`);
+
+                  // If we have a room code, join the battle room
+                  if (roomCode && selectedBeast) {
+                    try {
+                      const battleRoom = await joinBattleRoom({
+                        room_code: roomCode,
+                        player2_id: userId,
+                        player2_beast_id: selectedBeast.id,
+                      });
+
+                      console.log("Successfully joined battle room:", battleRoom.id);
+                      
+                      // Navigate to battle arena
+                      router.push({
+                        pathname: "/(game)/battle-arena" as any,
+                        params: {
+                          battleId: battleRoom.id,
+                          beastId: selectedBeast.id.toString(),
+                        },
+                      });
+                    } catch (joinError: any) {
+                      console.error("Error joining battle room:", joinError);
+                      Alert.alert("Error", joinError.message || "Failed to join battle");
+                    }
+                  } else if (walletAddress) {
+                    // Fallback to old flow if no room code
+                    console.log("No room code, using legacy flow");
+                    router.push({
+                      pathname: "/(game)/confirm",
+                      params: { sender: walletAddress },
+                    });
+                  } else {
+                    Alert.alert("Error", "Invalid invitation data. Please try again.");
+                  }
+                } catch (error) {
+                  console.error("Error accepting battle:", error);
+                  Alert.alert("Error", "Failed to accept battle invitation");
+                }
+              },
+            },
+          ],
+          { cancelable: false },
+        );
+      } catch (error) {
+        console.error("Error processing invitation:", error);
+        setDebugInfo((prev) => prev + `\nError processing invitation: ${error}`);
+        Alert.alert("Error", "Failed to process battle invitation");
+      }
     })
 
     // Listen for connection state changes
@@ -674,28 +775,55 @@ export default function FindPlayersScreen() {
         text: "Challenge",
         onPress: async () => {
           try {
+            // Validate prerequisites
+            if (!selectedBeast) {
+              Alert.alert("Error", "Please select a beast before challenging a player")
+              return
+            }
+
+            if (!userId) {
+              Alert.alert("Error", "User ID not found. Please try logging in again.")
+              return
+            }
+
+            if (!player.id) {
+              throw new Error("Invalid player ID")
+            }
+
+            console.log("Sending challenge to player:", player.id)
+            setDebugInfo((prev) => prev + `\nSending challenge to player: ${player.id}`)
+
             // Special case for self-testing
             if (player.id === "self-test-id") {
               console.log("Self-testing notification...")
               setDebugInfo((prev) => prev + `\nSelf-testing notification...`)
 
-              // Create a deep link URL with the wallet address
-              const deepLinkUrl = `exp+algoquest:///(game)/confirm?sender=${walletAddress}`
+              // Create a test battle room with room code
+              const testBattleRoom = await createBattleRoom({
+                player1_id: userId,
+                player1_beast_id: selectedBeast.id,
+              });
+
+              console.log("Test battle room created:", testBattleRoom.room_code);
 
               // Directly trigger a notification for testing
               await Notifications.scheduleNotificationAsync({
                 content: {
                   title: "Battle Challenge",
-                  body: `${username} wants to battle with you!`,
-                  data: { url: deepLinkUrl },
+                  body: `${username} wants to battle with you! Room: ${testBattleRoom.room_code}`,
+                  data: {
+                    roomCode: testBattleRoom.room_code,
+                    battleId: testBattleRoom.id,
+                    walletAddress,
+                  },
                 },
-                trigger: null, // sends the notification immediately
+                trigger: null,
               })
 
               // Show test alert
               Alert.alert(
                 "Battle Challenge (Test)",
-                `${username} wants to battle with you!`,
+                `${username} wants to battle with you!\n\nRoom Code: ${testBattleRoom.room_code}`,
                 [
                   {
                     text: "Decline",
@@ -705,8 +833,11 @@ export default function FindPlayersScreen() {
                     text: "Accept",
                     onPress: () =>
                       router.push({
-                        pathname: "/(game)/confirm",
-                        params: { sender: walletAddress },
+                        pathname: "/(game)/battle-lobby",
+                        params: {
+                          battleId: testBattleRoom.id,
+                          beastId: selectedBeast.id.toString(),
+                        },
                       }),
                   },
                 ],
@@ -716,51 +847,20 @@ export default function FindPlayersScreen() {
               return
             }
 
-            // Normal flow for other players
-            console.log("Sending challenge to player:", player.id)
-            setDebugInfo((prev) => prev + `\nSending challenge to player: ${player.id}`)
+            // Normal flow: Create battle room with room code
+            console.log("Creating battle room with room code...")
+            setDebugInfo((prev) => prev + `\nCreating battle room...`)
 
-            // Make sure we have a valid connection
-            if (!player.id) {
-              throw new Error("Invalid player ID")
-            }
-
-            // Create a battle room first and get the battle ID
-            if (!selectedBeast) {
-              Alert.alert("Error", "Please select a beast before challenging a player")
-              return
-            }
-
-            // Create battle in database
-            const battleData = {
+            const battleRoom = await createBattleRoom({
               player1_id: userId,
-              player1_beast_id: selectedBeast.id.toString(),
-              status: "waiting",
-              current_turn: "player1",
-              turn_number: 1,
-              turn_time_remaining: 30,
-              battle_data: {
-                moves: [],
-              },
-            }
+              player1_beast_id: selectedBeast.id,
+            });
 
-            const { data: battle, error: battleError } = await supabase
-              .from("battles")
-              .insert(battleData)
-              .select()
-              .single()
+            console.log("Battle room created:", battleRoom.id, "Room code:", battleRoom.room_code)
+            setDebugInfo((prev) => prev + `\nBattle created: ${battleRoom.id}, Room: ${battleRoom.room_code}`)
 
-            if (battleError) {
-              console.error("Error creating battle:", battleError)
-              Alert.alert("Error", "Failed to create battle room")
-              return
-            }
-
-            console.log("Battle created:", battle.id)
-            setDebugInfo((prev) => prev + `\nBattle created: ${battle.id}`)
-
-            // Set up real-time listener for this specific battle
-            const battleChannel = supabase.channel(`battle:${battle.id}`)
+            // Set up real-time listener for when opponent joins
+            const battleChannel = supabase.channel(`battle:${battleRoom.id}`)
 
             battleChannel
               .on(
@@ -769,7 +869,7 @@ export default function FindPlayersScreen() {
                   event: "UPDATE",
                   schema: "public",
                   table: "battles",
-                  filter: `id=eq.${battle.id}`,
+                  filter: `id=eq.${battleRoom.id}`,
                 },
                 (payload) => {
                   console.log("Battle update received:", payload.new)
@@ -790,10 +890,10 @@ export default function FindPlayersScreen() {
                           text: "Let's Battle!",
                           onPress: () => {
                             router.push({
-                              pathname: "/battle-arena",
+                              pathname: "/(game)/battle-arena",
                               params: {
                                 beastId: selectedBeast.id.toString(),
-                                battleId: battle.id,
+                                battleId: battleRoom.id,
                               },
                             })
                           },
@@ -806,46 +906,81 @@ export default function FindPlayersScreen() {
               )
               .subscribe()
 
-            // Create a deep link URL with the battle ID
-            const deepLinkUrl = `exp://exp.host/@username/app/--/game/confirm?sender=${walletAddress}&battleId=${battle.id}`
+            // Prepare invitation payload with room code and battle information
+            // Note: expo-nearby-connections uses the 'name' parameter to pass data
+            // We encode the invitation data as JSON in the name field
+            const invitationPayload = JSON.stringify({
+              roomCode: battleRoom.room_code,
+              battleId: battleRoom.id,
+              playerName: username || walletAddress,
+              walletAddress: walletAddress,
+            });
 
-            // Send battle invitation to the player with the wallet address as payload
-            console.log("Sending invitation with wallet address payload:", walletAddress)
-            await NearbyConnections.requestConnection(player.id, walletAddress)
+            console.log("Sending invitation with payload:", invitationPayload)
+            setDebugInfo((prev) => prev + `\nSending invitation: ${invitationPayload}`)
 
-            // Show a toast or alert that the challenge was sent
-            Alert.alert("Challenge Sent", `Challenge sent to ${player.name}. Redirecting to battle lobby...`, [
-              {
-                text: "OK",
-                onPress: () => {
-                  // Redirect to battle lobby
-                  router.push({
-                    pathname: "/(game)/battle-lobby",
-                    params: {
-                      battleId: battle.id.toString(), // Make sure this is a string
-                      opponentName: player.name,
-                      beastId: selectedBeast.id.toString(),
-                    },
-                  })
+            // Send battle invitation via Nearby Connections
+            // The invitation payload is sent as the display name, which will be received
+            // by the other device in the onInvitationReceived handler
+            try {
+              // Note: requestConnection takes (peerId) - the payload is sent via the advertise name
+              // We need to re-advertise with the invitation data as the name
+              await NearbyConnections.stopAdvertise();
+              await NearbyConnections.startAdvertise(invitationPayload);
+              await NearbyConnections.requestConnection(player.id);
+              console.log("Invitation sent successfully")
+              setDebugInfo((prev) => prev + `\nInvitation sent successfully`)
+            } catch (connectionError) {
+              console.error("Error sending nearby connection invitation:", connectionError)
+              setDebugInfo((prev) => prev + `\nConnection error: ${connectionError}`)
+              throw new Error("Failed to send invitation via Nearby Connections")
+            }
+
+            // Show success message and redirect to battle lobby
+            Alert.alert(
+              "Challenge Sent",
+              `Challenge sent to ${player.name}.\n\nRoom Code: ${battleRoom.room_code}\n\nWaiting for opponent...`,
+              [
+                {
+                  text: "OK",
+                  onPress: () => {
+                    router.push({
+                      pathname: "/(game)/battle-lobby",
+                      params: {
+                        battleId: battleRoom.id,
+                        opponentName: player.name,
+                        beastId: selectedBeast.id.toString(),
+                        roomCode: battleRoom.room_code || undefined,
+                      },
+                    })
+                  },
                 },
-              },
-            ])
+              ]
+            )
 
             // Auto redirect after 2 seconds if user doesn't press OK
             setTimeout(() => {
               router.push({
                 pathname: "/(game)/battle-lobby",
                 params: {
-                  battleId: battle.id.toString(), // Make sure this is a string
+                  battleId: battleRoom.id,
                   opponentName: player.name,
                   beastId: selectedBeast.id.toString(),
+                  roomCode: battleRoom.room_code || undefined,
                 },
               })
             }, 2000)
-          } catch (error) {
+          } catch (error: any) {
             console.error("Error sending challenge:", error)
             setDebugInfo((prev) => prev + `\nError sending challenge: ${error}`)
-            Alert.alert("Error", `Failed to send challenge invitation: ${error}`)
+            
+            // Provide specific error messages based on error type
+            let errorMessage = "Failed to send challenge invitation";
+            if (error.message) {
+              errorMessage = error.message;
+            }
+            
+            Alert.alert("Error", errorMessage)
           }
         },
       },
@@ -899,6 +1034,177 @@ export default function FindPlayersScreen() {
   const handleCreateBeast = () => {
     setShowBeastSelector(false)
     router.push("/beast-creation")
+  }
+
+  // Handle creating a battle room
+  const handleCreateBattleRoom = async () => {
+    if (!selectedBeast) {
+      Alert.alert("Select Beast", "Please select a beast before creating a battle room.")
+      return
+    }
+
+    if (!userId) {
+      Alert.alert("Error", "User ID not found. Please try logging in again.")
+      return
+    }
+
+    try {
+      setIsCreatingRoom(true)
+      
+      const battleRoom = await createBattleRoom({
+        player1_id: userId,
+        player1_beast_id: selectedBeast.id,
+      })
+
+      setCreatedRoomCode(battleRoom.room_code)
+      setCreatedBattleId(battleRoom.id)
+      
+      Alert.alert(
+        "Battle Room Created!",
+        `Your room code is: ${battleRoom.room_code}\n\nShare this code with your opponent to start the battle.`,
+        [{ text: "OK" }]
+      )
+
+      // Set up real-time listener for when opponent joins
+      const battleChannel = supabase.channel(`battle:${battleRoom.id}`)
+      
+      battleChannel
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "battles",
+            filter: `id=eq.${battleRoom.id}`,
+          },
+          (payload) => {
+            const updatedBattle = payload.new as any
+            
+            if (updatedBattle.status === "active" && updatedBattle.player2_id) {
+              battleChannel.unsubscribe()
+              
+              Alert.alert(
+                "Opponent Joined!",
+                "Your opponent has joined the battle. Get ready!",
+                [
+                  {
+                    text: "Start Battle",
+                    onPress: () => {
+                      router.push({
+                        pathname: "/(game)/battle-arena",
+                        params: {
+                          battleId: battleRoom.id,
+                          beastId: selectedBeast.id.toString(),
+                        },
+                      })
+                    },
+                  },
+                ],
+                { cancelable: false }
+              )
+            }
+          }
+        )
+        .subscribe()
+    } catch (error: any) {
+      console.error("Error creating battle room:", error)
+      
+      // Use error handling utilities
+      if (error instanceof AppError) {
+        if (error.type === ErrorType.NETWORK) {
+          handleDatabaseError(error, 'creating battle room', handleCreateBattleRoom)
+        } else if (error.type === ErrorType.VALIDATION) {
+          Alert.alert("Validation Error", error.message)
+        } else {
+          Alert.alert("Error", getUserFriendlyErrorMessage(error))
+        }
+      } else {
+        Alert.alert("Error", getUserFriendlyErrorMessage(error))
+      }
+    } finally {
+      setIsCreatingRoom(false)
+    }
+  }
+
+  // Handle joining a battle room
+  const handleJoinBattleRoom = async () => {
+    if (!selectedBeast) {
+      Alert.alert("Select Beast", "Please select a beast before joining a battle room.")
+      return
+    }
+
+    if (!userId) {
+      Alert.alert("Error", "User ID not found. Please try logging in again.")
+      return
+    }
+
+    // Validate room code format first
+    const formatValidation = validateRoomCodeFormat(joinRoomCode)
+    if (!formatValidation.isValid) {
+      Alert.alert("Invalid Code", formatValidation.error || "Please enter a valid room code.")
+      return
+    }
+
+    try {
+      setIsJoiningRoom(true)
+      
+      const battleRoom = await joinBattleRoom({
+        room_code: joinRoomCode.toUpperCase(),
+        player2_id: userId,
+        player2_beast_id: selectedBeast.id,
+      })
+
+      // Clear the input on success
+      setJoinRoomCode("")
+
+      Alert.alert(
+        "Joined Battle!",
+        "You've successfully joined the battle. Get ready!",
+        [
+          {
+            text: "Start Battle",
+            onPress: () => {
+              router.push({
+                pathname: "/(game)/battle-arena",
+                params: {
+                  battleId: battleRoom.id,
+                  beastId: selectedBeast.id.toString(),
+                },
+              })
+            },
+          },
+        ],
+        { cancelable: false }
+      )
+    } catch (error: any) {
+      console.error("Error joining battle room:", error)
+      
+      // Use error handling utilities
+      if (error instanceof AppError) {
+        if (error.type === ErrorType.VALIDATION) {
+          // Handle invalid room code with retry option
+          handleInvalidRoomCode(joinRoomCode, () => {
+            setJoinRoomCode("")
+          })
+        } else if (error.type === ErrorType.NETWORK) {
+          handleDatabaseError(error, 'joining battle room', handleJoinBattleRoom)
+        } else {
+          Alert.alert("Error", getUserFriendlyErrorMessage(error))
+        }
+      } else {
+        Alert.alert("Error", getUserFriendlyErrorMessage(error))
+      }
+    } finally {
+      setIsJoiningRoom(false)
+    }
+  }
+
+  // Handle copying room code to clipboard
+  const handleCopyRoomCode = async () => {
+    if (createdRoomCode) {
+      await setStringAsync(createdRoomCode)
+      Alert.alert("Copied!", "Room code copied to clipboard")
+    }
   }
 
   const renderBeastItem = ({ item }: { item: Beast }) => (
@@ -997,16 +1303,105 @@ export default function FindPlayersScreen() {
             </BlurView>
           </TouchableOpacity>
 
-          {/* Scanning Status */}
-          <Animated.View entering={FadeInDown.delay(200)} style={styles.scanningCard}>
+          {/* Create Battle Room Section */}
+          <Animated.View entering={FadeInDown.delay(200)} style={styles.roomCard}>
             <BlurView intensity={40} tint="dark" style={styles.cardContent}>
               <LinearGradient
                 colors={["rgba(124, 58, 237, 0.2)", "rgba(0, 0, 0, 0)"]}
                 style={StyleSheet.absoluteFill}
               />
-              <Users size={24} color="#7C3AED" />
+              <View style={styles.roomHeader}>
+                <Swords size={24} color="#7C3AED" />
+                <Text style={styles.roomTitle}>Create Battle Room</Text>
+              </View>
+              
+              {createdRoomCode ? (
+                <View style={styles.roomCodeDisplay}>
+                  <Text style={styles.roomCodeLabel}>Your Room Code:</Text>
+                  <View style={styles.roomCodeContainer}>
+                    <Text style={styles.roomCodeText}>{createdRoomCode}</Text>
+                    <TouchableOpacity onPress={handleCopyRoomCode} style={styles.copyButton}>
+                      <Copy size={20} color="#7C3AED" />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.roomCodeHint}>Share this code with your opponent</Text>
+                  <View style={styles.waitingIndicatorContainer}>
+                    <ActivityIndicator size="small" color="#7C3AED" />
+                    <Text style={styles.waitingText}>Waiting for opponent to join...</Text>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.createRoomButton,
+                    (!selectedBeast || isCreatingRoom) && styles.createRoomButtonDisabled
+                  ]}
+                  onPress={handleCreateBattleRoom}
+                  disabled={isCreatingRoom || !selectedBeast}
+                >
+                  {isCreatingRoom ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <>
+                      <Plus size={20} color="#ffffff" />
+                      <Text style={styles.createRoomButtonText}>
+                        {!selectedBeast ? "Select a Beast First" : "Create Room"}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+            </BlurView>
+          </Animated.View>
+
+          {/* Join Battle Room Section */}
+          <Animated.View entering={FadeInDown.delay(300)} style={styles.roomCard}>
+            <BlurView intensity={40} tint="dark" style={styles.cardContent}>
+              <LinearGradient
+                colors={["rgba(59, 130, 246, 0.2)", "rgba(0, 0, 0, 0)"]}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={styles.roomHeader}>
+                <LogIn size={24} color="#3B82F6" />
+                <Text style={styles.roomTitle}>Join Battle Room</Text>
+              </View>
+              
+              <View style={styles.joinRoomContainer}>
+                <TextInput
+                  style={styles.roomCodeInput}
+                  placeholder="Enter 6-character code"
+                  placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                  value={joinRoomCode}
+                  onChangeText={(text) => setJoinRoomCode(text.toUpperCase())}
+                  maxLength={6}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  style={[styles.joinRoomButton, (!joinRoomCode || joinRoomCode.length !== 6) && styles.joinRoomButtonDisabled]}
+                  onPress={handleJoinBattleRoom}
+                  disabled={isJoiningRoom || !selectedBeast || !joinRoomCode || joinRoomCode.length !== 6}
+                >
+                  {isJoiningRoom ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text style={styles.joinRoomButtonText}>Join</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </BlurView>
+          </Animated.View>
+
+          {/* Scanning Status */}
+          <Animated.View entering={FadeInDown.delay(400)} style={styles.scanningCard}>
+            <BlurView intensity={40} tint="dark" style={styles.cardContent}>
+              <LinearGradient
+                colors={["rgba(34, 197, 94, 0.2)", "rgba(0, 0, 0, 0)"]}
+                style={StyleSheet.absoluteFill}
+              />
+              <Users size={24} color="#22C55E" />
               <Text style={styles.scanningText}>
-                {scanning ? "Scanning for nearby players..." : "Start scanning for players"}
+                {scanning ? "Scanning for nearby players..." : "Or discover nearby players"}
               </Text>
               <TouchableOpacity
                 style={[styles.scanButton, scanning && styles.stopButton]}
@@ -1108,8 +1503,9 @@ export default function FindPlayersScreen() {
                   colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]}
                   style={StyleSheet.absoluteFill}
                 />
-                <Users size={32} color="rgba(255, 255, 255, 0.3)" />
-                <Text style={styles.emptyStateText}>Searching for nearby players...</Text>
+                <Users size={48} color="rgba(255, 255, 255, 0.3)" />
+                <Text style={styles.emptyStateTitle}>Searching for nearby players...</Text>
+                <Text style={styles.emptyStateSubtext}>Make sure Bluetooth is enabled</Text>
               </BlurView>
             )}
 
@@ -1119,8 +1515,11 @@ export default function FindPlayersScreen() {
                   colors={["rgba(124, 58, 237, 0.1)", "rgba(0, 0, 0, 0)"]}
                   style={StyleSheet.absoluteFill}
                 />
-                <Users size={32} color="rgba(255, 255, 255, 0.3)" />
-                <Text style={styles.emptyStateText}>No players found. Start scanning to discover nearby players.</Text>
+                <Users size={48} color="rgba(255, 255, 255, 0.3)" />
+                <Text style={styles.emptyStateTitle}>No nearby players found</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  Try creating a room code or start scanning for nearby players
+                </Text>
               </BlurView>
             )}
           </ScrollView>
@@ -1256,6 +1655,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
+  roomCard: {
+    margin: 16,
+    marginTop: 8,
+  },
   scanningCard: {
     margin: 16,
     marginTop: 8,
@@ -1268,12 +1671,130 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.1)",
     gap: 12,
   },
+  roomHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 8,
+  },
+  roomTitle: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  roomCodeDisplay: {
+    width: "100%",
+    alignItems: "center",
+    gap: 8,
+  },
+  roomCodeLabel: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 14,
+  },
+  roomCodeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(124, 58, 237, 0.2)",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#7C3AED",
+    gap: 12,
+  },
+  roomCodeText: {
+    color: "#ffffff",
+    fontSize: 32,
+    fontWeight: "bold",
+    letterSpacing: 4,
+  },
+  copyButton: {
+    padding: 8,
+  },
+  roomCodeHint: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 12,
+    textAlign: "center",
+  },
+  waitingIndicatorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 12,
+    backgroundColor: "rgba(124, 58, 237, 0.1)",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  waitingText: {
+    color: "#7C3AED",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  createRoomButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+    minWidth: 200,
+  },
+  createRoomButtonDisabled: {
+    backgroundColor: "rgba(124, 58, 237, 0.3)",
+    opacity: 0.6,
+  },
+  createRoomButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  joinRoomContainer: {
+    flexDirection: "row",
+    width: "100%",
+    gap: 12,
+  },
+  roomCodeInput: {
+    flex: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "600",
+    letterSpacing: 2,
+    textAlign: "center",
+  },
+  joinRoomButton: {
+    backgroundColor: "#3B82F6",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    minWidth: 80,
+  },
+  joinRoomButtonDisabled: {
+    backgroundColor: "rgba(59, 130, 246, 0.3)",
+  },
+  joinRoomButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
   scanningText: {
     color: "#ffffff",
     fontSize: 16,
+    textAlign: "center",
   },
   scanButton: {
-    backgroundColor: "#7C3AED",
+    backgroundColor: "#22C55E",
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
@@ -1413,17 +1934,24 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   emptyState: {
-    padding: 32,
+    padding: 40,
     borderRadius: 16,
     alignItems: "center",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
-    gap: 16,
+    gap: 12,
   },
-  emptyStateText: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 16,
+  emptyStateTitle: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "bold",
     textAlign: "center",
+  },
+  emptyStateSubtext: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
   },
   permissionContainer: {
     flex: 1,

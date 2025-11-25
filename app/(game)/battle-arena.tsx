@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Vibration, StatusBar, Alert } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Vibration, StatusBar, Alert, ActivityIndicator } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
@@ -303,10 +303,22 @@ export default function BattleArenaScreen() {
     return () => {
       // Cleanup real-time connection
       if (realtimeChannel) {
+        console.log("Cleaning up real-time connection...")
         realtimeChannel.unsubscribe()
+        setRealtimeChannel(null)
       }
     }
   }, [])
+
+  // Separate effect to handle real-time channel cleanup when battleId changes
+  useEffect(() => {
+    return () => {
+      if (realtimeChannel && battleId) {
+        console.log(`Unsubscribing from battle:${battleId}`)
+        realtimeChannel.unsubscribe()
+      }
+    }
+  }, [battleId, realtimeChannel])
 
   // Battle timer
   useEffect(() => {
@@ -321,6 +333,31 @@ export default function BattleArenaScreen() {
       handleTimeUp()
     }
   }, [battleStarted, turnTime, gameOver, waitingForOpponent])
+
+  // Monitor connection status and show warning if disconnected
+  useEffect(() => {
+    if (connectionStatus === "disconnected" && battleStarted && !gameOver) {
+      Alert.alert(
+        "Connection Lost",
+        "You've been disconnected from the battle. Attempting to reconnect...",
+        [
+          {
+            text: "Retry Now",
+            onPress: () => {
+              if (battleId) {
+                setupRealtimeConnection(battleId)
+              }
+            },
+          },
+          {
+            text: "Exit Battle",
+            onPress: () => router.back(),
+            style: "destructive",
+          },
+        ]
+      )
+    }
+  }, [connectionStatus, battleStarted, gameOver])
 
   // Replace the loadBattleData function with:
   const loadBattleData = async (battle: Battle, userId: string) => {
@@ -429,7 +466,8 @@ export default function BattleArenaScreen() {
       setCurrentUserId(userId)
 
       // Get selected beast ID
-      const selectedBeastId = beastId || (await SecureStore.getItemAsync("selectedBeastId"))
+      const beastIdParam = Array.isArray(beastId) ? beastId[0] : beastId
+      const selectedBeastId = beastIdParam || (await SecureStore.getItemAsync("selectedBeastId"))
       if (!selectedBeastId) {
         setError("No beast selected for battle. Please select a beast first.")
         return
@@ -463,12 +501,14 @@ export default function BattleArenaScreen() {
 
       if (existingBattleId) {
         // Join existing battle using battle ID (player 2 joining from confirm screen)
-        console.log("Joining existing battle with ID:", existingBattleId)
-        battle = await joinExistingBattle(userId, selectedBeastId, existingBattleId as string)
+        const battleIdStr = Array.isArray(existingBattleId) ? existingBattleId[0] : existingBattleId
+        console.log("Joining existing battle with ID:", battleIdStr)
+        battle = await joinExistingBattle(userId, selectedBeastId, battleIdStr)
       } else if (opponentId) {
         // Join existing battle using battle code (player 2 joining via code)
-        console.log("Joining battle by code:", opponentId)
-        battle = await joinBattleByCode(userId, selectedBeastId, opponentId as string)
+        const opponentIdStr = Array.isArray(opponentId) ? opponentId[0] : opponentId
+        console.log("Joining battle by code:", opponentIdStr)
+        battle = await joinBattleByCode(userId, selectedBeastId, opponentIdStr)
       } else {
         // Create battle and wait for opponent (player 1 creating new battle)
         console.log("Creating new battle")
@@ -488,7 +528,8 @@ export default function BattleArenaScreen() {
       setupRealtimeConnection(battle.id)
     } catch (error) {
       console.error("Error initializing battle:", error)
-      setError(`Failed to initialize battle: ${error.message || "Unknown error"}`)
+      const errorMessage = error instanceof Error ? error.message : "Unknown error"
+      setError(`Failed to initialize battle: ${errorMessage}`)
     } finally {
       setIsLoading(false)
     }
@@ -721,12 +762,39 @@ export default function BattleArenaScreen() {
           ])
         }
       })
+      .on("broadcast", { event: "turn_skipped" }, (payload) => {
+        console.log("Turn skipped broadcast received:", payload)
+        if (payload.payload.skippedBy !== currentUserId) {
+          // Opponent's turn was skipped, update local state
+          setCurrentTurn(payload.payload.newTurn)
+          setTurnNumber(payload.payload.newTurnNumber)
+          setTurnTime(30)
+          
+          setLogCounter((prev) => prev + 1)
+          setBattleLogs((prev) => [
+            {
+              id: `${Date.now()}_${logCounter}`,
+              message: "Opponent ran out of time!",
+              type: "system",
+              timestamp: Date.now(),
+            },
+            ...prev.slice(0, 4),
+          ])
+        }
+      })
       .subscribe((status) => {
         console.log("Realtime connection status:", status)
         if (status === "SUBSCRIBED") {
           setConnectionStatus("connected")
         } else if (status === "CLOSED") {
           setConnectionStatus("disconnected")
+        } else if (status === "CHANNEL_ERROR") {
+          setConnectionStatus("disconnected")
+          // Attempt to reconnect after a delay
+          setTimeout(() => {
+            console.log("Attempting to reconnect...")
+            setupRealtimeConnection(battleId)
+          }, 3000)
         }
       })
 
@@ -1076,7 +1144,9 @@ export default function BattleArenaScreen() {
     }
   }
 
-  const handleTimeUp = () => {
+  const handleTimeUp = async () => {
+    if (!battleId) return
+
     setLogCounter((prev) => prev + 1)
     setBattleLogs((prev) => [
       {
@@ -1088,10 +1158,48 @@ export default function BattleArenaScreen() {
       ...prev.slice(0, 4),
     ])
 
-    // Switch turns
-    setCurrentTurn(isMyTurn() ? (isPlayer1 ? "player2" : "player1") : isPlayer1 ? "player1" : "player2")
-    setTurnTime(30)
-    setTurnNumber((prev) => prev + 1)
+    // Determine new turn
+    const newTurn = isMyTurn() ? (isPlayer1 ? "player2" : "player1") : isPlayer1 ? "player1" : "player2"
+    const newTurnNumber = turnNumber + 1
+
+    try {
+      // Persist turn switch to database
+      const { error } = await supabase
+        .from("battles")
+        .update({
+          current_turn: newTurn,
+          turn_number: newTurnNumber,
+          turn_time_remaining: 30,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", battleId)
+
+      if (error) {
+        console.error("Error switching turn after timeout:", error)
+      }
+
+      // Update local state
+      setCurrentTurn(newTurn)
+      setTurnTime(30)
+      setTurnNumber(newTurnNumber)
+
+      // Broadcast turn skip via real-time channel
+      if (realtimeChannel) {
+        await realtimeChannel.send({
+          type: "broadcast",
+          event: "turn_skipped",
+          payload: {
+            skippedBy: currentUserId,
+            newTurn,
+            newTurnNumber,
+            timestamp: Date.now(),
+          },
+        })
+      }
+    } catch (error) {
+      console.error("Error handling time up:", error)
+      Alert.alert("Connection Error", "Failed to switch turn. Please check your connection.")
+    }
   }
 
   const isMyTurn = () => {
@@ -1443,6 +1551,27 @@ export default function BattleArenaScreen() {
         ))}
       </View>
 
+      {/* Connection Status Banner */}
+      {connectionStatus !== "connected" && !gameOver && (
+        <Animated.View entering={SlideInDown} style={styles.connectionBanner}>
+          <BlurView intensity={80} tint="dark" style={styles.connectionBannerContent}>
+            <LinearGradient
+              colors={[
+                connectionStatus === "connecting" ? "rgba(245, 158, 11, 0.6)" : "rgba(239, 68, 68, 0.6)",
+                "rgba(0, 0, 0, 0.8)",
+              ]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <ActivityIndicator size="small" color="#ffffff" />
+            <Text style={styles.connectionBannerText}>
+              {connectionStatus === "connecting" ? "Connecting to battle..." : "Connection lost - Reconnecting..."}
+            </Text>
+          </BlurView>
+        </Animated.View>
+      )}
+
       {/* Battle Arena */}
       <Animated.View style={[styles.arenaContainer, battleFieldAnimation]}>
         {/* Replace the enemyStats section with: */}
@@ -1524,6 +1653,13 @@ export default function BattleArenaScreen() {
                 <Timer size={20} color="#F59E0B" />
                 <Text style={styles.modernTimerText}>{turnTime}</Text>
                 <Text style={styles.modernTurnText}>{isMyTurn() ? "Your Turn" : "Enemy Turn"}</Text>
+                {/* Connection Status Indicator */}
+                <View style={styles.connectionIndicator}>
+                  <Wifi 
+                    size={14} 
+                    color={connectionStatus === "connected" ? "#10B981" : connectionStatus === "connecting" ? "#F59E0B" : "#EF4444"} 
+                  />
+                </View>
                 <View
                   style={{
                     position: "absolute",
@@ -1621,12 +1757,35 @@ export default function BattleArenaScreen() {
                 <Text style={styles.modernGameOverTitle}>{winner === "player1" ? "🏆 VICTORY!" : "💀 DEFEAT!"}</Text>
                 <Text style={styles.modernGameOverText}>
                   {winner === "player1"
-                    ? `Your ${myBeast.name} has triumphed over ${opponentBeast.name}!`
-                    : `Your ${myBeast.name} has fallen to ${opponentBeast.name}!`}
+                    ? `Your ${myBeast?.name || "beast"} has triumphed over ${opponentBeast?.name || "opponent"}!`
+                    : `Your ${myBeast?.name || "beast"} has fallen to ${opponentBeast?.name || "opponent"}!`}
                 </Text>
-                <TouchableOpacity style={styles.modernExitButton} onPress={() => router.back()}>
-                  <Text style={styles.modernExitButtonText}>Return to Map</Text>
-                </TouchableOpacity>
+                <View style={styles.gameOverStats}>
+                  <Text style={styles.gameOverStatsText}>Battle Duration: {turnNumber} turns</Text>
+                  <Text style={styles.gameOverStatsText}>
+                    Final Health: {winner === "player1" ? Math.round(myBeast?.health || 0) : Math.round(opponentBeast?.health || 0)} HP
+                  </Text>
+                </View>
+                <View style={styles.gameOverButtons}>
+                  <TouchableOpacity 
+                    style={[styles.modernExitButton, styles.secondaryButton]} 
+                    onPress={() => {
+                      // Navigate to battle beasts tab
+                      router.replace("/(tabs)/battle-beasts")
+                    }}
+                  >
+                    <Text style={styles.modernExitButtonText}>View Beasts</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.modernExitButton} 
+                    onPress={() => {
+                      // Navigate back to find players
+                      router.replace("/(game)/find-players")
+                    }}
+                  >
+                    <Text style={styles.modernExitButtonText}>New Battle</Text>
+                  </TouchableOpacity>
+                </View>
               </BlurView>
             </Animated.View>
           )}
@@ -1724,59 +1883,67 @@ export default function BattleArenaScreen() {
                 style={StyleSheet.absoluteFill}
               />
               <View style={styles.modernMovesGrid}>
-                {myBeast.abilities.map((ability) => (
-                  <TouchableOpacity
-                    key={ability.id}
-                    style={[
-                      styles.modernMoveCard,
-                      { borderColor: getAbilityTypeColor(ability.type) },
-                      myBeast.energy < ability.energy_cost && styles.disabledMove,
-                    ]}
-                    onPress={() => myBeast.energy >= ability.energy_cost && handleAttack(ability)}
-                    disabled={myBeast.energy < ability.energy_cost}
-                  >
-                    <LinearGradient
-                      colors={[`${getAbilityTypeColor(ability.type)}30`, "rgba(0, 0, 0, 0.8)"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={StyleSheet.absoluteFill}
-                    />
-                    <View style={styles.modernMoveHeader}>
-                      {createElement(getElementIcon(ability.element), {
-                        size: 28,
-                        color: getElementColor(ability.element),
-                      })}
-                      <View
-                        style={[styles.modernMoveType, { backgroundColor: `${getAbilityTypeColor(ability.type)}50` }]}
-                      >
-                        <Text style={[styles.modernMoveTypeText, { color: getAbilityTypeColor(ability.type) }]}>
-                          {ability.type}
-                        </Text>
+                {myBeast.abilities.map((ability) => {
+                  const canUseAbility = myBeast.energy >= ability.energy_cost
+                  return (
+                    <TouchableOpacity
+                      key={ability.id}
+                      style={[
+                        styles.modernMoveCard,
+                        { borderColor: getAbilityTypeColor(ability.type) },
+                        !canUseAbility && styles.disabledMove,
+                      ]}
+                      onPress={() => canUseAbility && handleAttack(ability)}
+                      disabled={!canUseAbility}
+                    >
+                      <LinearGradient
+                        colors={[`${getAbilityTypeColor(ability.type)}30`, "rgba(0, 0, 0, 0.8)"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      {!canUseAbility && (
+                        <View style={styles.disabledOverlay}>
+                          <Text style={styles.disabledText}>Not Enough Energy</Text>
+                        </View>
+                      )}
+                      <View style={styles.modernMoveHeader}>
+                        {createElement(getElementIcon(ability.element), {
+                          size: 28,
+                          color: getElementColor(ability.element),
+                        })}
+                        <View
+                          style={[styles.modernMoveType, { backgroundColor: `${getAbilityTypeColor(ability.type)}50` }]}
+                        >
+                          <Text style={[styles.modernMoveTypeText, { color: getAbilityTypeColor(ability.type) }]}>
+                            {ability.type}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                    <Text style={styles.modernMoveName}>{ability.name}</Text>
-                    <View style={styles.modernMoveStats}>
-                      <View style={styles.modernMoveStat}>
-                        <Swords size={16} color={getAbilityTypeColor(ability.type)} />
-                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
-                          {ability.power}
-                        </Text>
+                      <Text style={styles.modernMoveName}>{ability.name}</Text>
+                      <View style={styles.modernMoveStats}>
+                        <View style={styles.modernMoveStat}>
+                          <Swords size={16} color={getAbilityTypeColor(ability.type)} />
+                          <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
+                            {ability.power}
+                          </Text>
+                        </View>
+                        <View style={styles.modernMoveStat}>
+                          <Star size={16} color={getAbilityTypeColor(ability.type)} />
+                          <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
+                            {ability.accuracy}%
+                          </Text>
+                        </View>
+                        <View style={styles.modernMoveStat}>
+                          <Zap size={16} color={getAbilityTypeColor(ability.type)} />
+                          <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
+                            {ability.energy_cost}
+                          </Text>
+                        </View>
                       </View>
-                      <View style={styles.modernMoveStat}>
-                        <Star size={16} color={getAbilityTypeColor(ability.type)} />
-                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
-                          {ability.accuracy}%
-                        </Text>
-                      </View>
-                      <View style={styles.modernMoveStat}>
-                        <Zap size={16} color={getAbilityTypeColor(ability.type)} />
-                        <Text style={[styles.modernMoveStatText, { color: getAbilityTypeColor(ability.type) }]}>
-                          {ability.energy_cost}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                    </TouchableOpacity>
+                  )
+                })}
               </View>
             </BlurView>
           </Animated.View>
@@ -1797,6 +1964,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0F0F23",
+  },
+  connectionBanner: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+  },
+  connectionBannerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 2,
+    borderBottomColor: "rgba(255, 255, 255, 0.2)",
+  },
+  connectionBannerText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
   },
   particlesContainer: {
     position: "absolute",
@@ -2037,6 +2226,19 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
   },
+  connectionIndicator: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
   modernBeastContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -2150,21 +2352,46 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#ffffff",
     textAlign: "center",
-    marginBottom: 24,
+    marginBottom: 16,
     lineHeight: 24,
+  },
+  gameOverStats: {
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 24,
+    width: "100%",
+  },
+  gameOverStatsText: {
+    fontSize: 14,
+    color: "#ffffff",
+    textAlign: "center",
+    marginVertical: 4,
+  },
+  gameOverButtons: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+    justifyContent: "center",
   },
   modernExitButton: {
     backgroundColor: "rgba(124, 58, 237, 0.9)",
     paddingVertical: 16,
-    paddingHorizontal: 32,
+    paddingHorizontal: 24,
     borderRadius: 16,
     borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.3)",
+    flex: 1,
+    maxWidth: 150,
+  },
+  secondaryButton: {
+    backgroundColor: "rgba(59, 130, 246, 0.9)",
   },
   modernExitButtonText: {
     color: "#ffffff",
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "bold",
+    textAlign: "center",
   },
   modernBattleLog: {
     position: "absolute",
@@ -2194,6 +2421,9 @@ const styles = StyleSheet.create({
   },
   logbuff: {
     color: "#7C3AED",
+  },
+  logdebuff: {
+    color: "#F59E0B",
   },
   logstatus: {
     color: "#F59E0B",
@@ -2233,6 +2463,24 @@ const styles = StyleSheet.create({
   },
   disabledMove: {
     opacity: 0.5,
+  },
+  disabledOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
+  },
+  disabledText: {
+    color: "#EF4444",
+    fontSize: 12,
+    fontWeight: "bold",
+    textAlign: "center",
   },
   modernMoveHeader: {
     flexDirection: "row",

@@ -33,7 +33,6 @@ import { useState, useEffect } from "react"
 import * as Clipboard from "expo-clipboard"
 import * as SecureStore from "expo-secure-store"
 import algosdk from "algosdk"
-import { QUEST_COIN_ASSET_ID } from "@/lib/algoClient"
 import { router } from "expo-router"
 import QRCodeStyled from "react-native-qrcode-styled"
 import { LinearGradient } from "expo-linear-gradient"
@@ -55,9 +54,6 @@ export default function WalletScreen() {
   const [publicAddress, setPublicAddress] = useState<string>("")
   const [algoBalance, setAlgoBalance] = useState<number>(0)
   const [algoPrice, setAlgoPrice] = useState<number>(0)
-  const [questCoinBalance, setQuestCoinBalance] = useState<number>(0)
-  const [isOptedIn, setIsOptedIn] = useState(false)
-  const [optInLoading, setOptInLoading] = useState(false)
   const [transactionCount, setTransactionCount] = useState(0)
   const [nfts, setNfts] = useState<NFTAsset[]>([])
   const [loading, setLoading] = useState(true)
@@ -121,9 +117,6 @@ export default function WalletScreen() {
       // Set ALGO balance
       setAlgoBalance(Number(accountInfo.amount.toString()) / 1000000)
 
-      // Check Quest Coin opt-in status
-      await checkOptInStatus(accountInfo)
-
       // Process NFTs
       const assets = accountInfo.assets || []
       const nftPromises = assets.map(async (asset: any) => {
@@ -164,64 +157,7 @@ export default function WalletScreen() {
     }
   }
 
-  const handleOptIn = async () => {
-    try {
-      setOptInLoading(true)
-      const mnemonic = await SecureStore.getItemAsync("mnemonic")
-      if (!mnemonic) {
-        Alert.alert("Error", "No mnemonic found")
-        return
-      }
 
-      const account = algosdk.mnemonicToSecretKey(mnemonic)
-      const algodClient = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "")
-
-      const suggestedParams = await algodClient.getTransactionParams().do()
-      const optInTxn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
-        sender: account.addr,
-        receiver: account.addr,
-        assetIndex: Number(QUEST_COIN_ASSET_ID),
-        amount: 0,
-        suggestedParams,
-      })
-
-      const signedTxn = optInTxn.signTxn(account.sk)
-      const { txid } = await algodClient.sendRawTransaction(signedTxn).do()
-
-      await algosdk.waitForConfirmation(algodClient, txid, 4)
-
-      await getAlgoBalance(publicAddress)
-      Alert.alert("Success", "Successfully opted in to Quest Coins!")
-      setIsOptedIn(true)
-    } catch (error) {
-      console.error("Error opting in:", error)
-      Alert.alert("Error", "Failed to opt in to Quest Coins")
-    } finally {
-      setOptInLoading(false)
-    }
-  }
-
-  const checkOptInStatus = async (accountInfo: any) => {
-    try {
-      const assets = accountInfo["assets"] || []
-
-      const isOptedIn = assets.some((asset: any) => {
-        const assetIdString = asset["assetId"].toString()
-        return assetIdString === QUEST_COIN_ASSET_ID
-      })
-      setIsOptedIn(isOptedIn)
-
-      if (isOptedIn) {
-        const questAsset = assets.find((asset: any) => {
-          const assetIdString = asset["assetId"].toString()
-          return assetIdString === QUEST_COIN_ASSET_ID
-        })
-        setQuestCoinBalance(questAsset ? Number(questAsset.amount.toString()) : 0)
-      }
-    } catch (error) {
-      console.error("Error checking opt-in status:", error)
-    }
-  }
 
   const onRefresh = async () => {
     setRefreshing(true)
@@ -303,26 +239,6 @@ export default function WalletScreen() {
           <Text style={styles.balanceAmount}>{algoBalance.toFixed(3)} ALGO</Text>
           <Text style={styles.balanceUsd}>≈ ${(algoBalance * algoPrice).toFixed(2)} USD</Text>
 
-          {/* Quest Coins Section */}
-          <View style={styles.questCoinsSection}>
-            <View style={styles.questCoinsHeader}>
-              <Coins size={20} color="#ffffff" />
-              <Text style={styles.questCoinsLabel}>Quest Coins</Text>
-            </View>
-
-            {isOptedIn ? (
-              <Text style={styles.questCoinsBalance}>{questCoinBalance} Q</Text>
-            ) : (
-              <TouchableOpacity style={styles.questOptInButton} onPress={handleOptIn} disabled={optInLoading}>
-                {optInLoading ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <Text style={styles.questOptInText}>Opt In to Quest Coins</Text>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-
           <View style={styles.actionButtonsRow}>
             <TouchableOpacity style={styles.actionButtonCircle} onPress={toggleQRCode}>
               <ArrowDown size={22} color="#ffffff" />
@@ -366,7 +282,7 @@ export default function WalletScreen() {
                 }}
                 innerEyesOptions={{ borderRadius: 6 }}
                 logo={{
-                  href: require("@/assets/images/quest.png"),
+                  href: require("@/assets/images/icon.png"),
                   padding: 4,
                   // scale: 2,
                   hidePieces: true,
@@ -529,40 +445,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 16,
   },
-  questCoinsSection: {
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-  },
-  questCoinsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-  },
-  questCoinsLabel: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  questCoinsBalance: {
-    color: "#ffffff",
-    fontSize: 24,
-    fontWeight: "bold",
-  },
-  questOptInButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 12,
-    padding: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  questOptInText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
+
   actionButtonsRow: {
     flexDirection: "row",
     justifyContent: "space-around",

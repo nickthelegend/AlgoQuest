@@ -8,6 +8,8 @@ import { EyeOff, Fingerprint, Shield, Copy, Key } from "lucide-react-native"
 import * as LocalAuthentication from "expo-local-authentication"
 import * as SecureStore from "expo-secure-store"
 import * as Clipboard from "expo-clipboard"
+import { router } from "expo-router"
+import { disconnectPeraWallet, getWalletType } from "@/lib/peraWallet"
 import ScreenLayout from "../../components/screen-layout"
 
 export default function WalletSettingsScreen() {
@@ -15,10 +17,17 @@ export default function WalletSettingsScreen() {
   const [showMnemonic, setShowMnemonic] = useState(false)
   const [mnemonic, setMnemonic] = useState<string>("")
   const [copied, setCopied] = useState(false)
+  const [walletType, setWalletType] = useState<'pera' | 'generated' | null>(null)
 
   useEffect(() => {
     checkBiometricSupport()
+    checkWalletType()
   }, [])
+
+  const checkWalletType = async () => {
+    const type = await getWalletType()
+    setWalletType(type)
+  }
 
   const checkBiometricSupport = async () => {
     const compatible = await LocalAuthentication.hasHardwareAsync()
@@ -56,60 +65,123 @@ export default function WalletSettingsScreen() {
     }
   }
 
+  const handleDisconnectWallet = async () => {
+    Alert.alert(
+      "Disconnect Wallet",
+      walletType === 'pera' 
+        ? "Are you sure you want to disconnect your PeraWallet? You can reconnect anytime."
+        : "Are you sure you want to disconnect your wallet? Make sure you have saved your recovery phrase.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Disconnect",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              if (walletType === 'pera') {
+                await disconnectPeraWallet()
+              } else {
+                // For generated wallets, just clear the stored data
+                await SecureStore.deleteItemAsync("mnemonic")
+                await SecureStore.deleteItemAsync("walletAddress")
+                await SecureStore.deleteItemAsync("walletType")
+                await SecureStore.deleteItemAsync("userProfile")
+                await SecureStore.deleteItemAsync("avatarImage")
+              }
+              
+              Alert.alert(
+                "Disconnected",
+                "Your wallet has been disconnected successfully.",
+                [
+                  {
+                    text: "OK",
+                    onPress: () => router.replace("/onboarding"),
+                  },
+                ]
+              )
+            } catch (error) {
+              console.error("Error disconnecting wallet:", error)
+              Alert.alert("Error", "Failed to disconnect wallet. Please try again.")
+            }
+          },
+        },
+      ]
+    )
+  }
+
   return (
     <ScreenLayout>
       <Text style={styles.title}>Wallet Security</Text>
 
       <View style={styles.sections}>
-        <Animated.View entering={FadeInDown.delay(200)}>
-          <BlurView intensity={40} tint="dark" style={styles.securityCard}>
-            <View style={styles.cardHeader}>
-              <Shield size={24} color="#7C3AED" />
-              <Text style={styles.cardTitle}>Recovery Phrase</Text>
-            </View>
-            <Text style={styles.cardDescription}>
-              Your recovery phrase is the only way to restore your wallet if you lose access. Never share it with
-              anyone.
-            </Text>
+        {walletType === 'generated' && (
+          <Animated.View entering={FadeInDown.delay(200)}>
+            <BlurView intensity={40} tint="dark" style={styles.securityCard}>
+              <View style={styles.cardHeader}>
+                <Shield size={24} color="#7C3AED" />
+                <Text style={styles.cardTitle}>Recovery Phrase</Text>
+              </View>
+              <Text style={styles.cardDescription}>
+                Your recovery phrase is the only way to restore your wallet if you lose access. Never share it with
+                anyone.
+              </Text>
 
-            {!showMnemonic ? (
-              <TouchableOpacity
-                style={[styles.authButton, !isBiometricSupported && styles.authButtonDisabled]}
-                onPress={handleBiometricAuth}
-                disabled={!isBiometricSupported}
-              >
-                <Fingerprint size={24} color="#ffffff" />
-                <Text style={styles.authButtonText}>
-                  {isBiometricSupported ? "Authenticate to View" : "Biometrics Not Available"}
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.mnemonicContainer}>
-                <View style={styles.mnemonicHeader}>
-                  <Key size={16} color="#7C3AED" />
-                  <Text style={styles.mnemonicTitle}>Recovery Phrase</Text>
-                  <TouchableOpacity onPress={() => setShowMnemonic(false)} style={styles.hideButton}>
-                    <EyeOff size={16} color="#94A3B8" />
-                    <Text style={styles.hideButtonText}>Hide</Text>
+              {!showMnemonic ? (
+                <TouchableOpacity
+                  style={[styles.authButton, !isBiometricSupported && styles.authButtonDisabled]}
+                  onPress={handleBiometricAuth}
+                  disabled={!isBiometricSupported}
+                >
+                  <Fingerprint size={24} color="#ffffff" />
+                  <Text style={styles.authButtonText}>
+                    {isBiometricSupported ? "Authenticate to View" : "Biometrics Not Available"}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.mnemonicContainer}>
+                  <View style={styles.mnemonicHeader}>
+                    <Key size={16} color="#7C3AED" />
+                    <Text style={styles.mnemonicTitle}>Recovery Phrase</Text>
+                    <TouchableOpacity onPress={() => setShowMnemonic(false)} style={styles.hideButton}>
+                      <EyeOff size={16} color="#94A3B8" />
+                      <Text style={styles.hideButtonText}>Hide</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.mnemonicContent}>
+                    <Text style={styles.mnemonicText}>{mnemonic}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.copyButton} onPress={copyToClipboard}>
+                    {copied ? (
+                      <Text style={styles.copyButtonText}>Copied!</Text>
+                    ) : (
+                      <>
+                        <Copy size={16} color="#ffffff" />
+                        <Text style={styles.copyButtonText}>Copy to Clipboard</Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 </View>
-                <View style={styles.mnemonicContent}>
-                  <Text style={styles.mnemonicText}>{mnemonic}</Text>
-                </View>
-                <TouchableOpacity style={styles.copyButton} onPress={copyToClipboard}>
-                  {copied ? (
-                    <Text style={styles.copyButtonText}>Copied!</Text>
-                  ) : (
-                    <>
-                      <Copy size={16} color="#ffffff" />
-                      <Text style={styles.copyButtonText}>Copy to Clipboard</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+              )}
+            </BlurView>
+          </Animated.View>
+        )}
+
+        {walletType === 'pera' && (
+          <Animated.View entering={FadeInDown.delay(200)}>
+            <BlurView intensity={40} tint="dark" style={styles.securityCard}>
+              <View style={styles.cardHeader}>
+                <Shield size={24} color="#FFC107" />
+                <Text style={styles.cardTitle}>PeraWallet Connected</Text>
               </View>
-            )}
-          </BlurView>
-        </Animated.View>
+              <Text style={styles.cardDescription}>
+                Your wallet is connected via PeraWallet. Manage your recovery phrase and security settings directly in the PeraWallet app.
+              </Text>
+            </BlurView>
+          </Animated.View>
+        )}
 
         <Animated.View entering={FadeInDown.delay(400)}>
           <BlurView intensity={40} tint="dark" style={styles.warningCard}>
@@ -118,6 +190,25 @@ export default function WalletSettingsScreen() {
               • Never share your recovery phrase with anyone{"\n"}• Vercel will never ask for your recovery phrase{"\n"}
               • Store it in a secure location offline{"\n"}• If someone has your phrase, they have your funds
             </Text>
+          </BlurView>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.delay(600)}>
+          <BlurView intensity={40} tint="dark" style={styles.disconnectCard}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>Disconnect Wallet</Text>
+            </View>
+            <Text style={styles.cardDescription}>
+              {walletType === 'pera' 
+                ? "Disconnect your PeraWallet from this app. You can reconnect anytime."
+                : "Remove your wallet from this device. Make sure you have saved your recovery phrase before disconnecting."}
+            </Text>
+            <TouchableOpacity
+              style={styles.disconnectButton}
+              onPress={handleDisconnectWallet}
+            >
+              <Text style={styles.disconnectButtonText}>Disconnect Wallet</Text>
+            </TouchableOpacity>
           </BlurView>
         </Animated.View>
       </View>
@@ -244,6 +335,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "rgba(255, 255, 255, 0.8)",
     lineHeight: 24,
+  },
+  disconnectCard: {
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  disconnectButton: {
+    backgroundColor: "rgba(239, 68, 68, 0.2)",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+  },
+  disconnectButtonText: {
+    color: "#EF4444",
+    fontSize: 16,
+    fontWeight: "600",
   },
 })
 

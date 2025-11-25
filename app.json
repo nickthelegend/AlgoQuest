@@ -4,7 +4,7 @@
     "slug": "AlgoQuest",
     "version": "1.0.0",
     "orientation": "default",
-    "icon": "./assets/images/quest.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -81,7 +81,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/quest.png",
+          "icon": "./assets/images/icon.png",
           "color": "#ffffff",
           "defaultChannel": "default",
           "sounds": [

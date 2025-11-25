@@ -25,6 +25,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { createClient } from "@supabase/supabase-js"
 import algosdk from "algosdk"
 import * as FileSystem from "expo-file-system"
+import { connectPeraWallet, createOrUpdateUserProfile } from "@/lib/peraWallet"
 
 const supabase = createClient(
   "https://tficheendnovlkzoqoop.supabase.co",
@@ -290,9 +291,10 @@ export default function CreateWalletScreen() {
         avatarPrompt: formData.avatarPrompt,
       }
 
-      // Store mnemonic, wallet address, and user profile securely.
+      // Store mnemonic, wallet address, wallet type, and user profile securely.
       await SecureStore.setItemAsync("mnemonic", mnemonic)
       await SecureStore.setItemAsync("walletAddress", generatedAddress)
+      await SecureStore.setItemAsync("walletType", "generated")
       await SecureStore.setItemAsync("userProfile", JSON.stringify(userProfile))
 
       // Store the avatar image separately as base64
@@ -343,6 +345,40 @@ export default function CreateWalletScreen() {
   const handleSkip = () => {
     console.log("handleSkip: Navigating to home")
     router.push("/(tabs)")
+  }
+
+  const handleConnectPeraWallet = async () => {
+    try {
+      setIsLoading(true)
+      console.log("handleConnectPeraWallet: Starting PeraWallet connection")
+
+      // Connect to PeraWallet
+      const walletAddress = await connectPeraWallet()
+      console.log("handleConnectPeraWallet: Connected with address", walletAddress)
+
+      // Create or update user profile in database
+      await createOrUpdateUserProfile(walletAddress)
+      console.log("handleConnectPeraWallet: User profile created/updated")
+
+      Alert.alert(
+        "Success",
+        "PeraWallet connected successfully!",
+        [
+          {
+            text: "OK",
+            onPress: () => router.push("/(tabs)"),
+          },
+        ]
+      )
+    } catch (error) {
+      console.error("handleConnectPeraWallet: Error connecting PeraWallet", error)
+      Alert.alert(
+        "Connection Failed",
+        "Failed to connect to PeraWallet. Please try again."
+      )
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const renderFormStep = () => (
@@ -601,6 +637,40 @@ export default function CreateWalletScreen() {
             <Text style={styles.existingWalletLink}>Restore from recovery phrase</Text>
           </TouchableOpacity>
         </View>
+
+        {/* PeraWallet connection section */}
+        {step === "form" && (
+          <Animated.View entering={FadeInDown.delay(600)} style={styles.peraWalletSection}>
+            <View style={styles.dividerContainer}>
+              <View style={styles.divider} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.divider} />
+            </View>
+            <TouchableOpacity
+              style={styles.peraWalletButton}
+              onPress={handleConnectPeraWallet}
+              disabled={isLoading}
+            >
+              <BlurView intensity={40} tint="dark" style={styles.peraWalletButtonContent}>
+                <LinearGradient
+                  colors={["rgba(255, 193, 7, 0.1)", "rgba(0, 0, 0, 0)"]}
+                  style={StyleSheet.absoluteFill}
+                />
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#FFC107" />
+                ) : (
+                  <>
+                    <Wallet size={24} color="#FFC107" />
+                    <Text style={styles.peraWalletButtonText}>Connect with PeraWallet</Text>
+                  </>
+                )}
+              </BlurView>
+            </TouchableOpacity>
+            <Text style={styles.peraWalletDescription}>
+              Connect your existing Algorand wallet securely
+            </Text>
+          </Animated.View>
+        )}
       </ScrollView>
 
       {/* Custom Interest Modal */}
@@ -962,5 +1032,47 @@ const styles = StyleSheet.create({
     color: "#7C3AED",
     fontSize: 14,
     fontWeight: "600",
+  },
+  peraWalletSection: {
+    marginTop: 32,
+    gap: 16,
+  },
+  dividerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  },
+  dividerText: {
+    color: "rgba(255, 255, 255, 0.4)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  peraWalletButton: {
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 193, 7, 0.3)",
+  },
+  peraWalletButtonContent: {
+    padding: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  peraWalletButtonText: {
+    color: "#FFC107",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  peraWalletDescription: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 13,
+    textAlign: "center",
   },
 })
