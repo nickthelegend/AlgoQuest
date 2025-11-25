@@ -373,7 +373,7 @@ export default function WalletScreen() {
                   borderRadius: 12,
                 }}
                 style={{ backgroundColor: "white" }}
-                
+
               />
             </View>
             <View style={styles.addressContainer}>
@@ -387,7 +387,7 @@ export default function WalletScreen() {
           </BlurView>
         )}
 
-        
+
 
         {/* Quick Actions */}
         <View style={styles.sectionHeader}>
@@ -433,7 +433,10 @@ export default function WalletScreen() {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>NFT Collection</Text>
               {nfts.length > 2 && (
-                <TouchableOpacity onPress={() => router.push("/nfts")}>
+                <TouchableOpacity onPress={() => {
+                  console.log("Navigating to Arsenal from Wallet")
+                  router.push("/arsenal")
+                }}>
                   <Text style={styles.viewAllText}>View All</Text>
                 </TouchableOpacity>
               )}
