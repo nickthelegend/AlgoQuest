@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, Linking } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
@@ -22,6 +22,7 @@ import {
   Sun,
   Moon,
   Sparkles,
+  ExternalLink,
 } from "lucide-react-native"
 import { router, useLocalSearchParams } from "expo-router"
 import { supabase } from "@/lib/supabase"
@@ -111,6 +112,12 @@ export default function BeastDetailsScreen() {
       setError("Failed to load beast details")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const openExplorer = () => {
+    if (beast?.asset_id) {
+      Linking.openURL(`https://testnet.explorer.perawallet.app/asset/${beast.asset_id}`)
     }
   }
 
@@ -220,14 +227,14 @@ export default function BeastDetailsScreen() {
           <Text style={styles.title}>Beast Details</Text>
           {!beast.for_sale && (
             <TouchableOpacity
-            style={styles.sellButton}
-            onPress={() =>
-              router.push({
-                pathname: "/beast/[id]/sell",
-                params: { id: beast.id },
-              })
-            }
-          >
+              style={styles.sellButton}
+              onPress={() =>
+                router.push({
+                  pathname: "/beast/[id]/sell",
+                  params: { id: beast.id },
+                })
+              }
+            >
               <Tag size={20} color="#ffffff" />
             </TouchableOpacity>
           )}
@@ -244,7 +251,16 @@ export default function BeastDetailsScreen() {
             {/* Beast Header */}
             <View style={styles.beastHeader}>
               <View style={styles.beastInfo}>
-                <Text style={styles.beastName}>{beast.name}</Text>
+                <View style={styles.beastNameRow}>
+                  <Text style={styles.beastName}>{beast.name}</Text>
+                  <TouchableOpacity
+                    onPress={openExplorer}
+                    style={styles.explorerButton}
+                    accessibilityLabel="View in Algorand Explorer"
+                  >
+                    <ExternalLink size={16} color="#6366f1" />
+                  </TouchableOpacity>
+                </View>
                 <View style={[styles.tierBadge, { backgroundColor: getTierColor(beast.tier) }]}>
                   <Crown size={12} color="#ffffff" />
                   <Text style={styles.tierText}>Tier {beast.tier}</Text>
@@ -471,10 +487,23 @@ const styles = StyleSheet.create({
   beastInfo: {
     gap: 8,
   },
+  beastNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   beastName: {
     fontSize: 28,
     fontWeight: "bold",
     color: "#ffffff",
+  },
+  explorerButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(99, 102, 241, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   tierBadge: {
     flexDirection: "row",
@@ -646,4 +675,3 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 })
-
